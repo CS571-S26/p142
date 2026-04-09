@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router";
-import { ArrowLeft, LogOut, MessageSquare, Play } from "lucide-react";
+import { ArrowLeft, MessageSquare, Play } from "lucide-react";
 import { Button } from "./ui/button";
 import { useSpotify } from "../data/SpotifyContext";
 import { usePlayer } from "../data/PlayerContext";
@@ -14,7 +14,7 @@ export function PlaylistView() {
   const { playlistId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { token, logout } = useSpotify();
+  const { token } = useSpotify();
   const { play, isReady } = usePlayer();
 
   const routeState = location.state as {
@@ -51,17 +51,6 @@ export function PlaylistView() {
           >
             <ArrowLeft className="size-5 mr-2" />
             Back
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              logout();
-              navigate("/");
-            }}
-            className="text-gray-500 hover:text-red-600"
-          >
-            <LogOut className="size-4 mr-2" />
-            Log out
           </Button>
         </div>
       </header>
