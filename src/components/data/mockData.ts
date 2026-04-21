@@ -7,6 +7,7 @@ export interface Song {
   noteCount: number;
   favoriteCount: number;
   duration: string;
+  uri?: string;
 }
 
 export interface Playlist {

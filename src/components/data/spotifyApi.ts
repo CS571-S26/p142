@@ -42,6 +42,7 @@ interface SpotifyPlaylistItem {
 
 interface SpotifyTrackData {
   id: string;
+  uri?: string;
   name: string;
   artists: { name: string }[];
   album: { name: string; images: SpotifyImage[] };
@@ -53,10 +54,29 @@ interface SpotifyTrackItem {
   item?: SpotifyTrackData | null;
 }
 
-async function spotifyFetchRaw<T>(url: string, token: string): Promise<T> {
-  let res = await fetch(url, {
+interface RequestOptions {
+  method?: string;
+  body?: unknown;
+}
+
+function buildInit(token: string, options: RequestOptions = {}): RequestInit {
+  const init: RequestInit = {
+    method: options.method ?? "GET",
     headers: { Authorization: `Bearer ${token}` },
-  });
+  };
+  if (options.body !== undefined) {
+    (init.headers as Record<string, string>)["Content-Type"] = "application/json";
+    init.body = JSON.stringify(options.body);
+  }
+  return init;
+}
+
+async function spotifyFetchRaw<T>(
+  url: string,
+  token: string,
+  options: RequestOptions = {}
+): Promise<T> {
+  let res = await fetch(url, buildInit(token, options));
 
   if (res.status === 401) {
     const { refreshToken } = loadTokens();
@@ -64,9 +84,7 @@ async function spotifyFetchRaw<T>(url: string, token: string): Promise<T> {
       try {
         const data = await refreshAccessToken(CLIENT_ID, refreshToken);
         saveTokens(data);
-        res = await fetch(url, {
-          headers: { Authorization: `Bearer ${data.access_token}` },
-        });
+        res = await fetch(url, buildInit(data.access_token, options));
       } catch {
         clearTokens();
         throw new Error("Session expired — please log in again.");
@@ -78,11 +96,18 @@ async function spotifyFetchRaw<T>(url: string, token: string): Promise<T> {
     const body = await res.text();
     throw new Error(`Spotify API ${res.status}: ${body}`);
   }
-  return res.json();
+  // Spotify returns 200/201 with JSON, or 204 No Content for some endpoints
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
-async function spotifyFetch<T>(endpoint: string, token: string): Promise<T> {
-  return spotifyFetchRaw<T>(`${BASE}${endpoint}`, token);
+async function spotifyFetch<T>(
+  endpoint: string,
+  token: string,
+  options: RequestOptions = {}
+): Promise<T> {
+  return spotifyFetchRaw<T>(`${BASE}${endpoint}`, token, options);
 }
 
 export async function fetchUserPlaylists(token: string): Promise<Playlist[]> {
@@ -132,6 +157,9 @@ export interface PlaylistDetail {
   description: string;
   songCount: number;
   songs: Song[];
+  ownerId: string;
+  ownerName: string;
+  collaborative: boolean;
 }
 
 interface SpotifyPaginatedTracks {
@@ -140,22 +168,24 @@ interface SpotifyPaginatedTracks {
   total: number;
 }
 
+function trackToSong(t: SpotifyTrackData): Song {
+  return {
+    id: t.id,
+    title: t.name,
+    artist: t.artists?.map((a) => a.name).join(", ") ?? "Unknown Artist",
+    album: t.album?.name ?? "Unknown Album",
+    albumArt: t.album?.images?.[0]?.url ?? "",
+    noteCount: 0,
+    favoriteCount: 0,
+    duration: formatDuration(t.duration_ms ?? 0),
+    uri: t.uri ?? `spotify:track:${t.id}`,
+  };
+}
+
 function parseTrackEntries(rawItems: SpotifyTrackItem[]): Song[] {
   return rawItems
     .filter((entry) => (entry?.track ?? entry?.item) != null)
-    .map((entry) => {
-      const t = (entry.track ?? entry.item)!;
-      return {
-        id: t.id,
-        title: t.name,
-        artist: t.artists?.map((a) => a.name).join(", ") ?? "Unknown Artist",
-        album: t.album?.name ?? "Unknown Album",
-        albumArt: t.album?.images?.[0]?.url ?? "",
-        noteCount: 0,
-        favoriteCount: 0,
-        duration: formatDuration(t.duration_ms ?? 0),
-      };
-    });
+    .map((entry) => trackToSong((entry.track ?? entry.item)!));
 }
 
 export async function fetchPlaylistDetail(
@@ -165,6 +195,8 @@ export async function fetchPlaylistDetail(
   const data = await spotifyFetch<{
     name: string;
     description: string;
+    owner?: { id: string; display_name?: string };
+    collaborative?: boolean;
     tracks?: SpotifyPaginatedTracks;
     items?: SpotifyPaginatedTracks;
   }>(`/playlists/${playlistId}`, token);
@@ -185,7 +217,93 @@ export async function fetchPlaylistDetail(
     description: data.description || "",
     songCount: total,
     songs: parseTrackEntries(allItems),
+    ownerId: data.owner?.id ?? "",
+    ownerName: data.owner?.display_name ?? "",
+    collaborative: data.collaborative ?? false,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Current user (for playlist-ownership checks)
+// ---------------------------------------------------------------------------
+
+export interface CurrentUser {
+  id: string;
+  displayName: string;
+}
+
+export async function fetchCurrentUser(token: string): Promise<CurrentUser> {
+  const data = await spotifyFetch<{ id: string; display_name?: string }>(
+    "/me",
+    token
+  );
+  return { id: data.id, displayName: data.display_name ?? "" };
+}
+
+// ---------------------------------------------------------------------------
+// Track search (for adding songs to a playlist)
+// ---------------------------------------------------------------------------
+
+export async function searchTracks(
+  token: string,
+  query: string,
+  limit = 10
+): Promise<Song[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const params = new URLSearchParams({
+    q,
+    type: "track",
+    limit: String(limit),
+  });
+  const data = await spotifyFetch<{
+    tracks?: { items: SpotifyTrackData[] };
+  }>(`/search?${params.toString()}`, token);
+  return (data.tracks?.items ?? []).filter((t) => t != null).map(trackToSong);
+}
+
+// ---------------------------------------------------------------------------
+// Playlist editing — add / remove tracks
+// ---------------------------------------------------------------------------
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+export async function addTracksToPlaylist(
+  token: string,
+  playlistId: string,
+  uris: string[]
+): Promise<void> {
+  if (uris.length === 0) return;
+  // Spotify accepts up to 100 URIs per request
+  for (const batch of chunk(uris, 100)) {
+    await spotifyFetch<{ snapshot_id: string }>(
+      `/playlists/${playlistId}/tracks`,
+      token,
+      { method: "POST", body: { uris: batch } }
+    );
+  }
+}
+
+export async function removeTracksFromPlaylist(
+  token: string,
+  playlistId: string,
+  uris: string[]
+): Promise<void> {
+  if (uris.length === 0) return;
+  for (const batch of chunk(uris, 100)) {
+    await spotifyFetch<{ snapshot_id: string }>(
+      `/playlists/${playlistId}/tracks`,
+      token,
+      {
+        method: "DELETE",
+        body: { tracks: batch.map((uri) => ({ uri })) },
+      }
+    );
+  }
 }
 
 export async function startPlayback(

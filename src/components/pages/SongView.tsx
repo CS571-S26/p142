@@ -32,17 +32,17 @@ export function SongView() {
 
   if (loading) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-white">
-        <p className="text-gray-400 text-lg">Loading song...</p>
+      <div className="h-screen w-full flex items-center justify-center bg-[#FFF8E7]">
+        <p className="text-[#8B6F47] text-lg">Loading song...</p>
       </div>
     );
   }
 
   if (error || !song) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-white">
+      <div className="h-screen w-full flex items-center justify-center bg-[#FFF8E7]">
         <div className="text-center">
-          <h2 className="text-2xl mb-4">{error ?? "Song not found"}</h2>
+          <h2 className="text-2xl mb-4 text-[#3D2817]">{error ?? "Song not found"}</h2>
           <Button onClick={() => navigate("/home")}>
             Go Back Home
           </Button>
@@ -59,12 +59,13 @@ export function SongView() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-white pb-24">
-      <header className="border-b border-gray-200 bg-white sticky top-0 z-10">
+    <div className="min-h-screen w-full bg-[#FFF8E7] pb-24">
+      <header className="border-b-2 border-[#3D2817] bg-[#FFE8BA] sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-8 py-4">
           <Button 
             variant="ghost" 
             onClick={() => navigate(`/playlist/${playlistId}`)}
+            className="text-[#3D2817]"
           >
             <ArrowLeft className="size-5 mr-2" />
             Back to playlist
@@ -79,14 +80,14 @@ export function SongView() {
               <img 
                 src={song.albumArt} 
                 alt={song.title}
-                className="w-64 h-64 object-cover rounded-lg shadow-lg"
+                className="w-64 h-64 object-cover rounded-lg border-4 border-[#3D2817] shadow-[8px_8px_0px_0px_rgba(61,40,23,1)]"
               />
             </div>
           )}
-          <h1 className="text-4xl font-bold mb-3">{song.title}</h1>
-          <p className="text-xl text-gray-600 mb-1">{song.artist}</p>
-          <p className="text-gray-500">{song.album}</p>
-          <div className="mt-4 flex items-center gap-6 text-sm text-gray-500">
+          <h1 className="text-4xl font-bold mb-3 text-[#3D2817]">{song.title}</h1>
+          <p className="text-xl text-[#8B6F47] mb-1">{song.artist}</p>
+          <p className="text-[#8B6F47]">{song.album}</p>
+          <div className="mt-4 flex items-center gap-6 text-sm text-[#8B6F47]">
             <span>{song.duration}</span>
             {isReady && (
               <button
@@ -98,7 +99,7 @@ export function SongView() {
                     play({ uris: [`spotify:track:${songId}`] });
                   }
                 }}
-                className="p-3 bg-black text-white rounded-full hover:scale-105 transition-transform"
+                className="p-3 bg-[#FF9F45] text-[#3D2817] rounded-full border-2 border-[#3D2817] shadow-[3px_3px_0px_0px_rgba(61,40,23,1)] hover:shadow-[1px_1px_0px_0px_rgba(61,40,23,1)] hover:scale-105 transition-all"
               >
                 {isPlaying && currentTrack?.id === songId ? (
                   <Pause className="size-5" />
@@ -114,7 +115,7 @@ export function SongView() {
           <div className="mb-8">
             <Button 
               onClick={() => setShowAddNote(true)}
-              className="w-full bg-black hover:bg-gray-800 text-white"
+              className="w-full bg-[#5B9BD5] hover:bg-[#4A8BC4] text-white font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
             >
               <Plus className="size-5 mr-2" />
               Add Note
@@ -123,19 +124,19 @@ export function SongView() {
         )}
 
         {showAddNote && (
-          <div className="mb-8 border border-gray-200 rounded-lg p-6 bg-gray-50">
-            <h3 className="font-semibold mb-3">Add Your Note</h3>
+          <div className="mb-8 border-2 border-[#3D2817] rounded-lg p-6 bg-white shadow-[4px_4px_0px_0px_rgba(61,40,23,1)]">
+            <h3 className="font-semibold mb-3 text-[#3D2817]">Add Your Note</h3>
             <Textarea 
               placeholder="Share your thoughts about this song..."
               value={newNote}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewNote(e.target.value)}
-              className="mb-3 bg-white"
+              className="mb-3 bg-[#FFF8E7]"
               rows={4}
             />
             <div className="flex gap-2">
               <Button 
                 onClick={handleAddNote} 
-                className="bg-black hover:bg-gray-800 text-white"
+                className="bg-[#FF9F45] hover:bg-[#FF8C2E] text-[#3D2817] font-semibold border-2 border-[#3D2817]"
               >
                 <Send className="size-4 mr-2" />
                 Post
@@ -151,10 +152,10 @@ export function SongView() {
         )}
 
         <div>
-          <h2 className="text-2xl font-bold mb-6">Notes</h2>
+          <h2 className="text-2xl font-bold mb-6 text-[#3D2817]">Notes</h2>
           
           {notes.length === 0 ? (
-            <div className="border border-gray-200 rounded-lg p-12 text-center text-gray-400">
+            <div className="border-2 border-[#3D2817] rounded-lg p-12 text-center text-[#8B6F47] bg-white">
               <p>No notes yet. Be the first to share your thoughts!</p>
             </div>
           ) : (
@@ -162,18 +163,18 @@ export function SongView() {
               {notes.map((note) => (
                 <div 
                   key={note.id} 
-                  className="border border-gray-200 rounded-lg p-6 bg-white hover:shadow-md transition-shadow"
+                  className="border-2 border-[#3D2817] rounded-lg p-6 bg-white shadow-[4px_4px_0px_0px_rgba(61,40,23,0.3)] hover:shadow-[6px_6px_0px_0px_rgba(61,40,23,0.4)] transition-all"
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div>
-                      <p className="font-semibold">{note.userName}</p>
-                      <p className="text-sm text-gray-500">{note.timestamp}</p>
+                      <p className="font-semibold text-[#3D2817]">{note.userName}</p>
+                      <p className="text-sm text-[#8B6F47]">{note.timestamp}</p>
                     </div>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-[#8B6F47]">
                       {note.likes} likes
                     </div>
                   </div>
-                  <p className="text-gray-700 leading-relaxed">{note.content}</p>
+                  <p className="text-[#3D2817] leading-relaxed">{note.content}</p>
                 </div>
               ))}
             </div>

@@ -3,6 +3,8 @@ const AUTH_ENDPOINT = "https://accounts.spotify.com/authorize";
 const SCOPES = [
   "playlist-read-private",
   "playlist-read-collaborative",
+  "playlist-modify-private",
+  "playlist-modify-public",
   "user-library-read",
   "user-read-private",
   "user-read-email",
