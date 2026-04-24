@@ -178,6 +178,7 @@ function trackToSong(t: SpotifyTrackData): Song {
     noteCount: 0,
     favoriteCount: 0,
     duration: formatDuration(t.duration_ms ?? 0),
+    durationMs: t.duration_ms,
     uri: t.uri ?? `spotify:track:${t.id}`,
   };
 }
@@ -272,6 +273,9 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+// Note: Spotify's Feb 2026 dev-mode migration renamed
+// /playlists/{id}/tracks -> /playlists/{id}/items. Dev-mode apps get 403 on
+// the old path.
 export async function addTracksToPlaylist(
   token: string,
   playlistId: string,
@@ -281,7 +285,7 @@ export async function addTracksToPlaylist(
   // Spotify accepts up to 100 URIs per request
   for (const batch of chunk(uris, 100)) {
     await spotifyFetch<{ snapshot_id: string }>(
-      `/playlists/${playlistId}/tracks`,
+      `/playlists/${playlistId}/items`,
       token,
       { method: "POST", body: { uris: batch } }
     );
@@ -295,12 +299,15 @@ export async function removeTracksFromPlaylist(
 ): Promise<void> {
   if (uris.length === 0) return;
   for (const batch of chunk(uris, 100)) {
+    // New /items endpoint uses `{ items: [{ uri }] }` on DELETE
+    // (replaces the old `{ tracks: [{ uri }] }` body from the
+    // deprecated /tracks endpoint). Up to 100 objects per request.
     await spotifyFetch<{ snapshot_id: string }>(
-      `/playlists/${playlistId}/tracks`,
+      `/playlists/${playlistId}/items`,
       token,
       {
         method: "DELETE",
-        body: { tracks: batch.map((uri) => ({ uri })) },
+        body: { items: batch.map((uri) => ({ uri })) },
       }
     );
   }

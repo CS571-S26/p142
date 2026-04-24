@@ -6,7 +6,8 @@ export interface Song {
   albumArt: string;
   noteCount: number;
   favoriteCount: number;
-  duration: string;
+  duration: string;     // formatted for display, e.g. "3:45"
+  durationMs?: number;  // raw ms, used when persisting to app_playlist_songs
   uri?: string;
 }
 

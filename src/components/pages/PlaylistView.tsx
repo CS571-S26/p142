@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { useSpotify } from "../data/SpotifyContext";
+import { useAppUser } from "../data/AppUserContext";
 import { usePlayer } from "../data/PlayerContext";
 import {
   addTracksToPlaylist,
@@ -32,7 +33,8 @@ export function PlaylistView() {
   const { playlistId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { token, logout } = useSpotify();
+  const { token } = useSpotify();
+  const { signOut } = useAppUser();
   const { play, isReady } = usePlayer();
 
   const routeState = location.state as {
@@ -188,8 +190,7 @@ export function PlaylistView() {
           <Button
             variant="ghost"
             onClick={() => {
-              logout();
-              navigate("/");
+              void signOut();
             }}
             className="text-[#8B6F47] hover:text-red-600"
           >

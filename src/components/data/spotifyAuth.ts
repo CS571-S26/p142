@@ -16,6 +16,9 @@ const SCOPES = [
 export const LS_ACCESS_TOKEN = "spotify_access_token";
 export const LS_REFRESH_TOKEN = "spotify_refresh_token";
 export const LS_TOKEN_EXPIRY = "spotify_token_expiry";
+// Which SpinDeck user these tokens belong to. Used to prevent a Spotify
+// connection from leaking across SpinDeck accounts on the same browser.
+export const LS_OWNER_APP_USER_ID = "spindeck_spotify_owner_app_user_id";
 
 // --- sessionStorage keys (only needed during the redirect round-trip) ---
 const SS_CODE_VERIFIER = "spotify_code_verifier";
@@ -174,6 +177,18 @@ export function clearTokens() {
   localStorage.removeItem(LS_ACCESS_TOKEN);
   localStorage.removeItem(LS_REFRESH_TOKEN);
   localStorage.removeItem(LS_TOKEN_EXPIRY);
+  localStorage.removeItem(LS_OWNER_APP_USER_ID);
+}
+
+// Record which SpinDeck user just completed the OAuth flow. Called by
+// SpotifyContext right after a successful code-for-tokens exchange.
+// Token refreshes don't touch this — ownership is set once, at connect.
+export function setOwnerAppUserId(appUserId: string) {
+  localStorage.setItem(LS_OWNER_APP_USER_ID, appUserId);
+}
+
+export function getOwnerAppUserId(): string | null {
+  return localStorage.getItem(LS_OWNER_APP_USER_ID);
 }
 
 export function getRedirectUri(): string {

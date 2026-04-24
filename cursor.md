@@ -1,6 +1,6 @@
 # SpinDeck — Project State
 
-> **Last updated:** 2026-03-26
+> **Last updated:** 2026-04-21
 
 ## Overview
 
@@ -88,7 +88,9 @@ HomePage passes playlist metadata (name, description, vinylColor, songCount) to 
 9. Auto-refresh: `setTimeout` fires 5 min before token expiry, silently refreshes
 10. `spotifyApi.ts` also retries once on 401 by attempting a token refresh
 
-**Scopes:** `playlist-read-private`, `playlist-read-collaborative`, `user-library-read`, `user-read-private`, `user-read-email`
+**Scopes:** `playlist-read-private`, `playlist-read-collaborative`, `playlist-modify-private`, `playlist-modify-public`, `user-library-read`, `user-read-private`, `user-read-email`, `streaming`, `user-modify-playback-state`
+
+The two `playlist-modify-*` scopes were added on 2026-04-21 to enable in-app playlist editing. Users authorized before that date must log out and log in again for the new scopes to be granted.
 
 **Storage:**
 - `sessionStorage`: `spotify_code_verifier`, `spotify_auth_state` (only during redirect round-trip)
@@ -123,15 +125,24 @@ On mount:
 | Function | Endpoint | Returns |
 |----------|----------|---------|
 | `fetchUserPlaylists(token)` | `GET /me/playlists?limit=20` | `Playlist[]` |
-| `fetchPlaylistDetail(token, id)` | `GET /playlists/{id}` | `PlaylistDetail` (name, description, songCount, songs) |
+| `fetchPlaylistDetail(token, id)` | `GET /playlists/{id}` (paginates `next`) | `PlaylistDetail` (name, description, songCount, songs, ownerId, ownerName, collaborative) |
 | `fetchTrack(token, id)` | `GET /tracks/{id}` | `Song` |
+| `fetchCurrentUser(token)` | `GET /me` | `{ id, displayName }` — used by PlaylistView to decide whether the current user owns the playlist (and thus can edit) |
+| `searchTracks(token, query, limit?)` | `GET /search?q=…&type=track` | `Song[]` — debounced from PlaylistView's edit-mode search box |
+| `addTracksToPlaylist(token, id, uris)` | `POST /playlists/{id}/items`, body `{ uris: [...] }` | `void` (batches of up to 100 URIs) |
+| `removeTracksFromPlaylist(token, id, uris)` | `DELETE /playlists/{id}/items`, body `{ items: [{ uri }] }` | `void` (batches of up to 100) |
+| `startPlayback(token, deviceId, options)` | `PUT /me/player/play?device_id=…` | `void` |
 
-### Spotify API Quirks for Newer Apps (post Nov 2024)
+### Spotify API Quirks for Newer Apps (post Nov 2024 / Feb 2026 migration)
 
-- **Field rename:** In `/me/playlists` response, each playlist has `items: { total: N }` instead of the documented `tracks: { total: N }`. Code handles both with `p.items?.total ?? p.tracks?.total ?? 0`.
-- **Deprecated endpoints:** `/playlists/{id}/tracks` returns 403. Use `/playlists/{id}` (full playlist object) instead, which includes tracks in the response.
+- **Field rename (Nov 2024):** In `/me/playlists` response, each playlist has `items: { total: N }` instead of the documented `tracks: { total: N }`. Code handles both with `p.items?.total ?? p.tracks?.total ?? 0`.
+- **February 2026 dev-mode migration:** Spotify renamed several playlist-track endpoints from `/tracks` to `/items` for development-mode apps. The old paths now return a bare `403 Forbidden` (no `www-authenticate`, no reason field). The app uses the new paths everywhere:
+  - `POST /playlists/{id}/items` — add, body `{ uris: [...] }` (POST still accepts `uris`)
+  - `DELETE /playlists/{id}/items` — remove, body `{ items: [{ uri }] }` (the old `{ tracks: [{ uri }] }` shape and the `?uris=` query-param form both fail on the new endpoint; it specifically wants `items`)
+  - Reads still happen through `GET /playlists/{id}` (which returns the tracks inline) + the `next` pagination URL Spotify supplies; no migration needed there.
 - **Restricted playlists:** Spotify-owned algorithmic/editorial playlists (Discover Weekly, Daily Mix, Release Radar, etc.) return 403 for apps in development mode. PlaylistView shows a friendly "This playlist is restricted" message for 403 errors.
-- The full playlist response from `GET /playlists/{id}` uses either `tracks` or `items` as the key for the track listing. Code checks `data.items ?? data.tracks` to handle both.
+- **Ownership required for edits:** Spotify only allows modifying playlists the authenticated user owns (or collaborative ones they're a collaborator on). PlaylistView greys out the Edit button with an explanatory tooltip for playlists the current user doesn't own; the check is `detail.ownerId === currentUserId || detail.collaborative`.
+- The full playlist response from `GET /playlists/{id}` uses either `tracks` or `items` as the key for the track listing. Code checks `data.tracks ?? data.items` and paginates via `next` to load playlists with more than 100 tracks.
 
 ### 401 Retry Logic
 
@@ -155,6 +166,7 @@ interface Song {
   noteCount: number;   // always 0 from Spotify (notes are app-specific)
   favoriteCount: number; // always 0 from Spotify
   duration: string;    // formatted as "M:SS"
+  uri?: string;        // Spotify track URI (e.g. "spotify:track:...") — needed for add/remove
 }
 
 interface Playlist {
@@ -183,6 +195,14 @@ interface PlaylistDetail {
   description: string;
   songCount: number;
   songs: Song[];
+  ownerId: string;        // Spotify user ID of the playlist owner
+  ownerName: string;      // owner's display name (may be empty)
+  collaborative: boolean; // if true, anyone invited can edit
+}
+
+interface CurrentUser {
+  id: string;
+  displayName: string;
 }
 ```
 
@@ -209,12 +229,18 @@ interface PlaylistDetail {
 
 ### PlaylistView (`/playlist/:playlistId`)
 - Reads route state for immediate display of name, vinyl color, song count
-- Fetches full playlist detail via `fetchPlaylistDetail(token, playlistId)`
-- Header: VinylRecord (color from route state) + playlist name + song count
-- Song list: numbered rows with title, artist, note count icon, duration
-- Click on song → navigates to `/playlist/{playlistId}/song/{songId}`
-- 403 errors show "This playlist is restricted" with explanation
-- **KNOWN BUG: Songs list always shows empty** — `fetchPlaylistDetail` succeeds and returns correct `songCount` and `name`, but `songs` array is always empty. The issue is in how the Spotify full playlist response is parsed: the `data.items` field resolves to the track count object `{ total: N }` (which has no `.items` array) rather than the track listing. The `tracks` field may contain the actual track items for the full playlist response, but the code currently prefers `data.items` over `data.tracks`. This needs investigation — likely `data.items` in the full playlist response is the track count (same as in the listing), while `data.tracks.items` contains the actual track objects.
+- Fetches full playlist detail via `fetchPlaylistDetail(token, playlistId)` (now paginates via `next` for playlists > 100 tracks)
+- Fetches `/me` via `fetchCurrentUser` in parallel to decide edit permissions
+- Header: VinylRecord (color from route state) + playlist name + "N songs • by Owner"
+- "Play All" (when Spotify player is ready) plus an **Edit** button
+  - Edit button is enabled only when `ownerId === currentUserId || collaborative`
+  - When disabled, it greys out and a hover tooltip explains why ("Only X can edit this playlist…")
+- **Edit mode** (toggled by clicking Edit, exited with Done):
+  - Adds an "Add songs" panel above the track list with a debounced (300 ms) Spotify track search. Each result row shows album art + title + artist and an Add button; tracks already in the playlist render as disabled "Added" instead.
+  - Each existing song row gets a trash-icon Remove button. Play-all / row-click navigation is suppressed while editing to avoid mis-clicks.
+  - Add/remove calls refetch the playlist afterwards so the UI reflects the latest state.
+- Song list (when not editing): numbered rows with title, artist, note count icon, duration. Click → navigates to `/playlist/{playlistId}/song/{songId}`.
+- 403 errors show "This playlist is restricted" with explanation.
 
 ### SongView (`/playlist/:playlistId/song/:songId`)
 - Fetches individual track via `fetchTrack(token, songId)`
@@ -266,20 +292,34 @@ VITE_SPOTIFY_CLIENT_ID='c3fbe199a8024683bd1df8a198e5dc12'
 - [x] Notes UI with add-note form (local state only)
 - [x] .env gitignored, redirect URIs configured
 - [x] Friendly error messages for restricted (403) playlists
+- [x] Playlist track list pagination (walks the `next` URL so playlists > 100 tracks load fully)
+- [x] **Playlist editing** — add & remove songs in-app, gated by ownership (2026-04-21)
+- [x] Spotify track search (debounced) inside playlist edit mode
+- [x] Migration to `/playlists/{id}/items` endpoints for the Feb 2026 dev-mode API change
+- [x] Logout button wired into PlaylistView header
 
 ## Known Bugs
 
-- **PlaylistView songs list is always empty** — `fetchPlaylistDetail()` calls `GET /playlists/{id}` and gets back `name` and `songCount` correctly, but the `songs` array is always `[]`. Root cause: in the full playlist response, Spotify returns `items: { total: N }` (track count metadata, NOT the track array) and `tracks: { items: [...], total: N }` (the actual track objects). The code does `data.items ?? data.tracks` which picks up the count-only `items` object (no `.items` sub-array), so `rawItems` is `[]`. Fix: the code should prefer `data.tracks` for the full playlist endpoint, or access the response differently. This is the **#1 blocking bug**.
+_None blocking at the moment._ The previous "playlist songs list always empty" bug was resolved when `fetchPlaylistDetail` was changed to prefer `data.tracks ?? data.items` and paginate via `next`.
 
 ## Known Issues / TODOs
 
-- [ ] **Fix playlist songs loading** (see Known Bugs above)
 - [ ] `BadgerLayout.tsx` is orphaned — not used by any route
 - [ ] `bootstrap`, `react-bootstrap`, `dotenv`, `express` in package.json but unused
-- [ ] `show_dialog=true` forces consent screen every login — should remove after scopes are stable
-- [ ] Add-note form doesn't persist (no backend)
-- [ ] Notes are mock data keyed by fake IDs — always empty for real Spotify tracks
-- [ ] No logout button in UI (context exposes `logout()` but no UI wired)
+- [ ] `show_dialog=true` forces consent screen every login — should remove after scopes are stable (kept on for now since the modify scopes were just added and we want users to re-prompt)
+- [ ] **Notes don't persist** — add-note form is local state only; needs a backend (see "Planned: Notes Backend" below)
+- [ ] `mockNotes` in `mockData.ts` is keyed by fake IDs (`s1`, `s4`) — always empty for real Spotify tracks; will be replaced when the notes backend lands
 - [ ] SongView navigating back to playlist loses router state (no name/color on direct nav)
-- [ ] Only fetches first 50 tracks per playlist (no pagination)
+- [ ] Home page only fetches first 20 playlists (`limit=20`, no pagination)
 - [ ] `mockData.ts` exports `mockPlaylists` which are no longer used by any page
+- [ ] No global error/toast surface — edit errors show inline in the add-songs panel but other pages throw
+
+## Planned: Notes Backend
+
+Upcoming feature — persist user notes on songs and playlists. Requirements the backend needs to support:
+- Create / read / update / delete a note attached to a `(userId, spotifyTrackId)` or `(userId, spotifyPlaylistId)` pair
+- List all notes for a given song or playlist (for rendering counts on the playlist view)
+- Authenticate the caller (likely by validating the user's Spotify access token on the server, or by issuing our own app JWT after a first-time Spotify login)
+- Sensibly cheap / free for a class project
+
+See the conversation thread dated 2026-04-21 for the option comparison and chosen approach.
