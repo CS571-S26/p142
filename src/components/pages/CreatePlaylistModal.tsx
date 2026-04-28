@@ -88,12 +88,12 @@ export function CreatePlaylistModal({ ownerId, onClose, onCreated }: Props) {
           </button>
         </div>
 
-        <div className="px-5 py-5 space-y-5">
-          <div className="flex items-center gap-4">
+        <div className="px-4 sm:px-5 py-4 sm:py-5 space-y-4 sm:space-y-5">
+          <div className="flex flex-col sm:flex-row items-center sm:items-center gap-3 sm:gap-4">
             <div className="flex-shrink-0">
-              <VinylRecord color={color} size={96} />
+              <VinylRecord color={color} size={80} />
             </div>
-            <div className="flex-1">
+            <div className="flex-1 w-full">
               <label className="block text-sm font-semibold text-[#3D2817] mb-1">
                 Name
               </label>

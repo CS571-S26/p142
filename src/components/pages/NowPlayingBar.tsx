@@ -43,30 +43,32 @@ export function NowPlayingBar() {
         />
       </div>
 
-      <div className="max-w-5xl mx-auto flex items-center gap-4 px-6 py-3">
+      <div className="max-w-5xl mx-auto flex items-center gap-2 sm:gap-4 px-3 sm:px-6 py-2 sm:py-3">
         {currentTrack.albumArt && (
           <img
             src={currentTrack.albumArt}
             alt={currentTrack.name}
-            className="w-12 h-12 rounded border-2 border-[#8B6F47] object-cover flex-shrink-0"
+            className="w-10 h-10 sm:w-12 sm:h-12 rounded border-2 border-[#8B6F47] object-cover flex-shrink-0"
           />
         )}
 
-        <div className="flex-1 min-w-0 mr-4">
+        <div className="flex-1 min-w-0 sm:mr-4">
           <p className="text-sm font-semibold truncate">{currentTrack.name}</p>
           <p className="text-xs text-[#E6D5B8] truncate">{currentTrack.artist}</p>
         </div>
 
-        <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
           <button
             onClick={skipPrev}
             className="p-1.5 hover:bg-[#8B6F47] rounded-full transition-colors"
+            aria-label="Previous"
           >
             <SkipBack className="size-4" />
           </button>
           <button
             onClick={togglePlayPause}
             className="p-2 bg-[#FF9F45] text-[#3D2817] rounded-full hover:scale-105 transition-transform"
+            aria-label={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? (
               <Pause className="size-5" />
@@ -77,12 +79,15 @@ export function NowPlayingBar() {
           <button
             onClick={skipNext}
             className="p-1.5 hover:bg-[#8B6F47] rounded-full transition-colors"
+            aria-label="Next"
           >
             <SkipForward className="size-4" />
           </button>
         </div>
 
-        <div className="text-xs text-[#E6D5B8] tabular-nums flex-shrink-0 ml-4 w-20 text-right">
+        {/* Time readout takes ~80px and isn't load-bearing — hide on
+            phones where every pixel matters for the controls. */}
+        <div className="hidden sm:block text-xs text-[#E6D5B8] tabular-nums flex-shrink-0 ml-4 w-20 text-right">
           {formatTime(position)} / {formatTime(duration)}
         </div>
       </div>

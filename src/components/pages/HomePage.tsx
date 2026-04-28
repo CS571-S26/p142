@@ -9,9 +9,10 @@ import {
   listMyPlaylists,
   type AppPlaylistSummary,
 } from "../data/appPlaylistsApi";
+import { listSavedPlaylists } from "../data/savedPlaylistsApi";
 import { VinylRecord } from "./VinylRecord";
 import { CreatePlaylistModal } from "./CreatePlaylistModal";
-import { LogOut, Music, Plus } from "lucide-react";
+import { Bookmark, LogOut, Music, Plus } from "lucide-react";
 import { SpinDeckLogo } from "./SpinDeckLogo";
 
 export function HomePage() {
@@ -59,17 +60,46 @@ export function HomePage() {
     void loadAppPlaylists();
   }, [loadAppPlaylists]);
 
+  // --- Saved (bookmarked) playlists --------------------------------------
+  // These are app-playlists owned by other users that the current user has
+  // saved to their library via the "Save" button on AppPlaylistView. They
+  // render as a separate section so it's obvious which playlists you own
+  // (editable) vs. which you've saved (read-only).
+  const [savedPlaylists, setSavedPlaylists] = useState<AppPlaylistSummary[]>([]);
+  const [loadingSaved, setLoadingSaved] = useState<boolean>(Boolean(user?.id));
+  const [savedError, setSavedError] = useState<string | null>(null);
+
+  const loadSavedPlaylists = useCallback(async () => {
+    if (!user?.id) return;
+    setLoadingSaved(true);
+    setSavedError(null);
+    try {
+      const list = await listSavedPlaylists(user.id);
+      setSavedPlaylists(list);
+    } catch (e) {
+      setSavedError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingSaved(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    void loadSavedPlaylists();
+  }, [loadSavedPlaylists]);
+
   return (
     <div className="min-h-screen w-full bg-[#FFF8E7] pb-24">
       <header className="border-b-2 border-[#3D2817] bg-[#FFE8BA] sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-8 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <SpinDeckLogo size={72} spinSeconds={0} />
-            <h1 className="text-2xl font-bold text-[#3D2817]">Spin Deck</h1>
+        <div className="max-w-6xl mx-auto px-4 sm:px-8 py-3 sm:py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <SpinDeckLogo size={56} spinSeconds={0} />
+            <h1 className="text-xl sm:text-2xl font-bold text-[#3D2817] truncate">
+              Spin Deck
+            </h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 sm:gap-3">
             {user && (
-              <span className="text-sm text-[#8B6F47] hidden sm:inline">
+              <span className="text-sm text-[#8B6F47] hidden md:inline">
                 @{user.username}
               </span>
             )}
@@ -77,10 +107,11 @@ export function HomePage() {
               <Button
                 variant="ghost"
                 onClick={login}
-                className="text-[#8B6F47] hover:text-[#3D2817]"
+                className="text-[#8B6F47] hover:text-[#3D2817] px-2 sm:px-4"
+                aria-label="Connect Spotify"
               >
-                <Music className="size-4 mr-2" />
-                Connect Spotify
+                <Music className="size-4 sm:mr-2" />
+                <span className="hidden sm:inline">Connect Spotify</span>
               </Button>
             )}
             <Button
@@ -88,21 +119,22 @@ export function HomePage() {
               onClick={() => {
                 void signOut();
               }}
-              className="text-[#8B6F47] hover:text-red-600"
+              className="text-[#8B6F47] hover:text-red-600 px-2 sm:px-4"
+              aria-label="Log out"
             >
-              <LogOut className="size-4 mr-2" />
-              Log out
+              <LogOut className="size-4 sm:mr-2" />
+              <span className="hidden sm:inline">Log out</span>
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-8 py-12 space-y-16">
+      <main className="max-w-6xl mx-auto px-4 sm:px-8 py-6 sm:py-12 space-y-10 sm:space-y-16">
         {/* -------- Your SpinDeck Playlists (annotated, app-native) -------- */}
         <section>
-          <div className="flex items-end justify-between mb-8 flex-wrap gap-4">
+          <div className="flex items-end justify-between mb-6 sm:mb-8 flex-wrap gap-4">
             <div>
-              <h2 className="text-3xl font-bold text-[#3D2817]">
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#3D2817]">
                 Your SpinDeck Playlists
               </h2>
               <p className="text-sm text-[#8B6F47] mt-1">
@@ -144,23 +176,92 @@ export function HomePage() {
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
               {appPlaylists.map((pl) => (
                 <div
                   key={pl.id}
                   onClick={() => navigate(`/app-playlist/${pl.id}`)}
                   className="cursor-pointer group"
                 >
-                  <div className="mb-4 flex justify-center">
+                  <div className="mb-3 sm:mb-4 flex justify-center">
                     <div className="transition-transform group-hover:scale-105 group-hover:rotate-12">
-                      <VinylRecord color={pl.vinylColor} size={180} />
+                      <VinylRecord
+                        color={pl.vinylColor}
+                        className="size-32 sm:size-40 md:size-44"
+                      />
                     </div>
                   </div>
                   <div className="text-center">
-                    <h3 className="font-semibold text-lg mb-1 text-[#3D2817]">
+                    <h3 className="font-semibold text-base sm:text-lg mb-1 text-[#3D2817] line-clamp-2">
                       {pl.name}
                     </h3>
-                    <p className="text-sm text-[#8B6F47]">
+                    <p className="text-xs sm:text-sm text-[#8B6F47]">
+                      {pl.songCount} {pl.songCount === 1 ? "song" : "songs"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* -------- Saved playlists (bookmarked from others) -------- */}
+        {/* Live bookmarks: clicking a card opens the canonical playlist
+            view, where the owner's edits — track adds/removes,
+            annotations, name — show up immediately. The Save button on
+            that page flips to "Saved ✓" so the user can unsave from
+            either there or by deleting bookmarks here later. */}
+        <section>
+          <div className="mb-6 sm:mb-8">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[#3D2817]">
+              Saved Playlists
+            </h2>
+            <p className="text-sm text-[#8B6F47] mt-1">
+              Annotated playlists from other users that you've saved.
+            </p>
+          </div>
+
+          {loadingSaved ? (
+            <div className="text-center py-12 text-[#8B6F47]">
+              <p>Loading saved playlists…</p>
+            </div>
+          ) : savedError ? (
+            <div className="text-center py-12 text-red-600">
+              <p>{savedError}</p>
+            </div>
+          ) : savedPlaylists.length === 0 ? (
+            <div className="border-2 border-dashed border-[#8B6F47] rounded-lg p-8 sm:p-10 text-center bg-white/50">
+              <Bookmark className="size-6 mx-auto mb-2 text-[#8B6F47]" />
+              <p className="text-[#3D2817] font-semibold mb-1">
+                No saved playlists yet
+              </p>
+              <p className="text-sm text-[#8B6F47]">
+                When someone shares a SpinDeck playlist link with you, tap
+                <span className="font-semibold"> Save </span>
+                on the playlist page to keep it here.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
+              {savedPlaylists.map((pl) => (
+                <div
+                  key={pl.id}
+                  onClick={() => navigate(`/app-playlist/${pl.id}`)}
+                  className="cursor-pointer group"
+                >
+                  <div className="mb-3 sm:mb-4 flex justify-center">
+                    <div className="transition-transform group-hover:scale-105 group-hover:rotate-12">
+                      <VinylRecord
+                        color={pl.vinylColor}
+                        className="size-32 sm:size-40 md:size-44"
+                      />
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <h3 className="font-semibold text-base sm:text-lg mb-1 text-[#3D2817] line-clamp-2">
+                      {pl.name}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-[#8B6F47]">
                       {pl.songCount} {pl.songCount === 1 ? "song" : "songs"}
                     </p>
                   </div>
@@ -172,8 +273,8 @@ export function HomePage() {
 
         {/* -------- Spotify-synced playlists -------- */}
         <section>
-          <div className="mb-8">
-            <h2 className="text-3xl font-bold text-[#3D2817]">
+          <div className="mb-6 sm:mb-8">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[#3D2817]">
               Your Spotify Playlists
             </h2>
             <p className="text-sm text-[#8B6F47] mt-1">
@@ -218,7 +319,7 @@ export function HomePage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
               {spotifyPlaylists.map((playlist) => (
                 <div
                   key={playlist.id}
@@ -234,16 +335,19 @@ export function HomePage() {
                   }
                   className="cursor-pointer group"
                 >
-                  <div className="mb-4 flex justify-center">
+                  <div className="mb-3 sm:mb-4 flex justify-center">
                     <div className="transition-transform group-hover:scale-105 group-hover:rotate-12">
-                      <VinylRecord color={playlist.vinylColor} size={180} />
+                      <VinylRecord
+                        color={playlist.vinylColor}
+                        className="size-32 sm:size-40 md:size-44"
+                      />
                     </div>
                   </div>
                   <div className="text-center">
-                    <h3 className="font-semibold text-lg mb-1 text-[#3D2817]">
+                    <h3 className="font-semibold text-base sm:text-lg mb-1 text-[#3D2817] line-clamp-2">
                       {playlist.name}
                     </h3>
-                    <p className="text-sm text-[#8B6F47]">
+                    <p className="text-xs sm:text-sm text-[#8B6F47]">
                       {playlist.songCount} songs
                     </p>
                   </div>

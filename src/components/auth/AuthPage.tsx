@@ -12,12 +12,12 @@ export function AuthPage() {
   const [mode, setMode] = useState<Mode>("sign_in");
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-[#FFF8E7] px-4 py-10">
-      <div className="w-full max-w-md space-y-8">
-        <div className="flex flex-col items-center space-y-4">
-          <SpinDeckLogo size={128} />
-          <h1 className="text-4xl font-bold text-[#3D2817]">Spin Deck</h1>
-          <p className="text-[#8B6F47] text-center">
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#FFF8E7] px-4 py-6 sm:py-10">
+      <div className="w-full max-w-md space-y-6 sm:space-y-8">
+        <div className="flex flex-col items-center space-y-3 sm:space-y-4">
+          <SpinDeckLogo size={104} />
+          <h1 className="text-3xl sm:text-4xl font-bold text-[#3D2817]">Spin Deck</h1>
+          <p className="text-sm sm:text-base text-[#8B6F47] text-center">
             Annotate and explore your music collection
           </p>
         </div>

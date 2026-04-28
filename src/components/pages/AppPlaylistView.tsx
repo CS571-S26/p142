@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft,
+  Bookmark,
+  BookmarkCheck,
   Check,
   LogOut,
   Music,
@@ -21,6 +23,7 @@ import { useAppUser } from "../data/AppUserContext";
 import { usePlayer } from "../data/PlayerContext";
 import {
   addSong,
+  deletePlaylist,
   fetchPlaylist,
   removeSong,
   updateAnnotation,
@@ -28,6 +31,11 @@ import {
   type AppPlaylistDetail,
   type AppPlaylistSong,
 } from "../data/appPlaylistsApi";
+import {
+  isPlaylistSaved,
+  savePlaylist,
+  unsavePlaylist,
+} from "../data/savedPlaylistsApi";
 import { searchTracks } from "../data/spotifyApi";
 import type { Song } from "../data/mockData";
 import { VinylRecord } from "./VinylRecord";
@@ -167,6 +175,23 @@ export function AppPlaylistView() {
     };
   }, [searchQuery, isEditing, token]);
 
+  // --- Delete playlist ------------------------------------------------------
+  // Two-step inline confirm: button → "Are you sure?" → delete.
+  const [deleteState, setDeleteState] =
+    useState<"idle" | "confirming" | "deleting">("idle");
+
+  async function handleDelete() {
+    if (!detail) return;
+    setDeleteState("deleting");
+    try {
+      await deletePlaylist(detail.id);
+      navigate("/home");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setDeleteState("idle");
+    }
+  }
+
   // --- Share link -----------------------------------------------------------
   const [shareStatus, setShareStatus] = useState<"idle" | "copied">("idle");
 
@@ -179,6 +204,53 @@ export function AppPlaylistView() {
       // Clipboard API can be blocked in non-HTTPS contexts. Fall back to a
       // manual prompt so the user can still grab the URL.
       window.prompt("Copy this link:", window.location.href);
+    }
+  }
+
+  // --- Save (bookmark) to library ------------------------------------------
+  // `saved` is null while we don't yet know (loading the row), then a
+  // boolean. We only check for signed-in non-owners; owners and anonymous
+  // viewers don't see the Save button at all (or see a sign-up nudge).
+  const [saved, setSaved] = useState<boolean | null>(null);
+  const [savingBookmark, setSavingBookmark] = useState(false);
+
+  useEffect(() => {
+    // Reset whenever the playlist or user changes; bail when there's no
+    // bookmark check to do.
+    setSaved(null);
+    if (!user?.id || !detail) return;
+    if (detail.ownerId === user.id) return; // owners don't bookmark themselves
+    let cancelled = false;
+    isPlaylistSaved(user.id, detail.id)
+      .then((s) => {
+        if (!cancelled) setSaved(s);
+      })
+      .catch(() => {
+        if (!cancelled) setSaved(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, detail]);
+
+  async function handleToggleSave() {
+    if (!user?.id || !detail) return;
+    if (savingBookmark) return;
+    setSavingBookmark(true);
+    // Optimistic flip — undo on failure so the button isn't a black hole.
+    const next = !saved;
+    setSaved(next);
+    try {
+      if (next) {
+        await savePlaylist(user.id, detail.id);
+      } else {
+        await unsavePlaylist(user.id, detail.id);
+      }
+    } catch (e) {
+      setSaved(!next);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingBookmark(false);
     }
   }
 
@@ -300,7 +372,7 @@ export function AppPlaylistView() {
   return (
     <div className="min-h-screen w-full bg-[#FFF8E7] pb-24">
       <header className="border-b-2 border-[#3D2817] bg-[#FFE8BA] sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-8 py-4 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 sm:px-8 py-3 sm:py-4 flex items-center justify-between gap-2">
           {user ? (
             <Button
               variant="ghost"
@@ -340,20 +412,18 @@ export function AppPlaylistView() {
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-8 py-12">
+      <div className="max-w-4xl mx-auto px-4 sm:px-8 py-6 sm:py-12">
         {/* ----- Anonymous-viewer signup CTA ----- */}
         {/* Subtle banner pushing the viewer toward making a SpinDeck
             account so they can build their own annotated playlists.
             Hidden for signed-in users. */}
         {!user && (
-          <div className="mb-8 border-2 border-[#3D2817] rounded-md bg-[#FFE8BA] px-4 py-3 flex items-center gap-3 shadow-[3px_3px_0px_0px_rgba(61,40,23,1)]">
+          <div className="mb-6 sm:mb-8 border-2 border-[#3D2817] rounded-md bg-[#FFE8BA] px-3 sm:px-4 py-3 flex flex-wrap items-center gap-3 shadow-[3px_3px_0px_0px_rgba(61,40,23,1)]">
             <Music className="size-5 text-[#3D2817] flex-shrink-0" />
-            <p className="text-sm text-[#3D2817] flex-1">
+            <p className="text-sm text-[#3D2817] flex-1 min-w-[180px]">
               Loving this playlist?{" "}
-              <span className="font-semibold">
-                Sign up for SpinDeck
-              </span>{" "}
-              to annotate your own.
+              <span className="font-semibold">Sign up for SpinDeck</span> to
+              save it to your library and annotate your own.
             </p>
             <Button
               onClick={() => navigate("/")}
@@ -365,11 +435,17 @@ export function AppPlaylistView() {
         )}
 
         {/* ----- Playlist header ----- */}
-        <div className="flex items-start gap-8 mb-10">
+        {/* Stack vertical on phones (vinyl above info), side-by-side from
+            sm: up. On mobile we center the vinyl + heading; on desktop we
+            keep the original left-aligned two-column. */}
+        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 sm:gap-8 mb-8 sm:mb-10">
           <div className="flex-shrink-0">
-            <VinylRecord color={detail.vinylColor} size={200} />
+            <VinylRecord
+              color={detail.vinylColor}
+              className="size-36 sm:size-44 lg:size-[200px]"
+            />
           </div>
-          <div className="flex-1 pt-4 min-w-0">
+          <div className="flex-1 sm:pt-4 min-w-0 w-full text-center sm:text-left">
             {isEditing && isOwner ? (
               <>
                 <input
@@ -379,7 +455,7 @@ export function AppPlaylistView() {
                   onBlur={saveMeta}
                   maxLength={80}
                   placeholder="Playlist name"
-                  className="w-full text-4xl font-bold text-[#3D2817] bg-transparent border-b-2 border-[#3D2817]/30 focus:border-[#3D2817] outline-none mb-3 px-0 py-1"
+                  className="w-full text-2xl sm:text-4xl font-bold text-[#3D2817] bg-transparent border-b-2 border-[#3D2817]/30 focus:border-[#3D2817] outline-none mb-3 px-0 py-1"
                 />
                 <Textarea
                   value={editDescription}
@@ -396,11 +472,11 @@ export function AppPlaylistView() {
               </>
             ) : (
               <>
-                <h1 className="text-4xl font-bold mb-2 text-[#3D2817] break-words">
+                <h1 className="text-2xl sm:text-4xl font-bold mb-2 text-[#3D2817] break-words">
                   {detail.name}
                 </h1>
                 {detail.description && (
-                  <p className="text-[#8B6F47] mb-3 whitespace-pre-wrap">
+                  <p className="text-sm sm:text-base text-[#8B6F47] mb-3 whitespace-pre-wrap">
                     {detail.description}
                   </p>
                 )}
@@ -419,7 +495,7 @@ export function AppPlaylistView() {
               )}
             </p>
 
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center justify-center sm:justify-start gap-2 sm:gap-3 flex-wrap">
               {/* Play-all only works when Spotify is connected. For annotated
                   app playlists we play the track URIs directly (we don't
                   have a Spotify playlist URI to hand to the player). */}
@@ -456,6 +532,40 @@ export function AppPlaylistView() {
                     <>
                       <Share2 className="size-4 mr-2" />
                       Share
+                    </>
+                  )}
+                </Button>
+              )}
+
+              {/* Save to library — only for signed-in non-owners (owners
+                  don't bookmark themselves; anonymous viewers get the
+                  signup banner instead). `saved === null` means we're
+                  still checking; show a placeholder Save button so the
+                  layout doesn't pop in once the check resolves. */}
+              {!isEditing && user && !isOwner && (
+                <Button
+                  onClick={() => void handleToggleSave()}
+                  disabled={savingBookmark || saved === null}
+                  title={
+                    saved
+                      ? "Remove from your library"
+                      : "Save this playlist to your library"
+                  }
+                  className={
+                    saved
+                      ? "bg-[#3D2817] hover:bg-[#2A1B10] text-[#FFF8E7] font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
+                      : "bg-[#FFE8BA] hover:bg-[#F5D99A] text-[#3D2817] font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
+                  }
+                >
+                  {saved ? (
+                    <>
+                      <BookmarkCheck className="size-4 mr-2" />
+                      Saved
+                    </>
+                  ) : (
+                    <>
+                      <Bookmark className="size-4 mr-2" />
+                      Save
                     </>
                   )}
                 </Button>
@@ -685,6 +795,51 @@ export function AppPlaylistView() {
             {error}
           </p>
         )}
+
+        {/* ----- Delete-playlist zone (owner, edit mode) ----- */}
+        {/* Two-step inline confirm so a single misclick can't trash a
+            playlist. RLS on app_playlists requires owner_id = auth.uid()
+            for delete, so the API call would fail anyway, but the UI is
+            also gated on isOwner to avoid showing a button that does
+            nothing. */}
+        {isEditing && isOwner && (
+          <div className="mt-12 pt-6 border-t-2 border-[#E6D5B8]">
+            {deleteState === "idle" ? (
+              <Button
+                onClick={() => setDeleteState("confirming")}
+                variant="ghost"
+                className="text-red-700 hover:bg-red-50 hover:text-red-800"
+              >
+                <Trash2 className="size-4 mr-2" />
+                Delete playlist
+              </Button>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3 p-4 border-2 border-red-700 rounded-md bg-red-50">
+                <p className="text-sm text-[#3D2817] flex-1 min-w-[200px]">
+                  Permanently delete{" "}
+                  <span className="font-semibold">"{detail.name}"</span>?
+                  All annotations will be lost.
+                </p>
+                <Button
+                  variant="ghost"
+                  onClick={() => setDeleteState("idle")}
+                  disabled={deleteState === "deleting"}
+                  className="text-[#3D2817]"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => void handleDelete()}
+                  disabled={deleteState === "deleting"}
+                  className="bg-red-700 hover:bg-red-800 text-white border-2 border-red-900 font-semibold"
+                >
+                  <Trash2 className="size-4 mr-2" />
+                  {deleteState === "deleting" ? "Deleting…" : "Delete forever"}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -725,9 +880,9 @@ function SongRow({
   const isAnnotating = saving === `annotate:${entry.position}`;
 
   return (
-    <div className="px-4 py-4 border-b border-[#E6D5B8] last:border-b-0 group">
-      <div className="flex items-start gap-4">
-        <div className="w-8 pt-1 text-[#8B6F47] text-sm text-right relative">
+    <div className="px-3 sm:px-4 py-4 border-b border-[#E6D5B8] last:border-b-0 group">
+      <div className="flex items-start gap-3 sm:gap-4">
+        <div className="w-6 sm:w-8 pt-1 text-[#8B6F47] text-sm text-right relative">
           <span className={isEditing ? "" : "group-hover:invisible"}>
             {index + 1}
           </span>
@@ -764,8 +919,12 @@ function SongRow({
           </p>
         </div>
 
-        <div className="flex items-center gap-4 text-sm text-[#8B6F47] pt-1">
-          {entry.song.duration && <div>{entry.song.duration}</div>}
+        <div className="flex items-center gap-2 sm:gap-4 text-sm text-[#8B6F47] pt-1">
+          {/* Duration is nice-to-have, not load-bearing — drop it on
+              tiny screens so the title and remove button get more room. */}
+          {entry.song.duration && (
+            <div className="hidden sm:block">{entry.song.duration}</div>
+          )}
           {isEditing && (
             <button
               onClick={onRemove}
@@ -785,7 +944,10 @@ function SongRow({
       </div>
 
       {/* ---- Annotation block ---- */}
-      <div className="mt-3 pl-[4.5rem]">
+      {/* Indent annotation under the song row to align with the title.
+          The pl matches the index column + art width + gap on each
+          breakpoint. */}
+      <div className="mt-3 pl-[4rem] sm:pl-[4.5rem]">
         {isEditing ? (
           <div className="space-y-2">
             <Textarea

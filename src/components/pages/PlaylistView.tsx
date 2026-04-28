@@ -178,7 +178,7 @@ export function PlaylistView() {
   return (
     <div className="min-h-screen w-full bg-[#FFF8E7] pb-24">
       <header className="border-b-2 border-[#3D2817] bg-[#FFE8BA] sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-8 py-4 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 sm:px-8 py-3 sm:py-4 flex items-center justify-between">
           <Button
             variant="ghost"
             onClick={() => navigate("/home")}
@@ -200,13 +200,16 @@ export function PlaylistView() {
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-8 py-12">
-        <div className="flex items-start gap-8 mb-12">
+      <div className="max-w-4xl mx-auto px-4 sm:px-8 py-6 sm:py-12">
+        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 sm:gap-8 mb-8 sm:mb-12">
           <div className="flex-shrink-0">
-            <VinylRecord color={vinylColor} size={200} />
+            <VinylRecord
+              color={vinylColor}
+              className="size-36 sm:size-44 lg:size-[200px]"
+            />
           </div>
-          <div className="flex-1 pt-8">
-            <h1 className="text-4xl font-bold mb-2 text-[#3D2817]">
+          <div className="flex-1 sm:pt-8 w-full text-center sm:text-left">
+            <h1 className="text-2xl sm:text-4xl font-bold mb-2 text-[#3D2817] break-words">
               {playlistName}
             </h1>
             <p className="text-sm text-[#8B6F47] mb-4">
@@ -215,7 +218,7 @@ export function PlaylistView() {
                 <span className="ml-2">• by {detail.ownerName}</span>
               )}
             </p>
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center justify-center sm:justify-start gap-2 sm:gap-3 flex-wrap">
               {isReady && songs.length > 0 && !isEditing && (
                 <Button
                   onClick={(e) => {
@@ -266,11 +269,11 @@ export function PlaylistView() {
 
         {isEditing && (
           <div className="mb-6 border-2 border-[#3D2817] rounded-lg bg-white overflow-hidden">
-            <div className="px-4 py-2 bg-[#FFE8BA] border-b-2 border-[#3D2817] text-sm font-medium text-[#3D2817] flex items-center gap-2">
+            <div className="px-3 sm:px-4 py-2 bg-[#FFE8BA] border-b-2 border-[#3D2817] text-sm font-medium text-[#3D2817] flex items-center gap-2">
               <Plus className="size-4" />
               Add songs
             </div>
-            <div className="p-4">
+            <div className="p-3 sm:p-4">
               <div className="flex items-center gap-2 border-2 border-[#3D2817] rounded-md px-3 py-2 bg-[#FFF8E7] focus-within:bg-white">
                 <Search className="size-4 text-[#8B6F47]" />
                 <input
@@ -316,16 +319,16 @@ export function PlaylistView() {
                       return (
                         <li
                           key={song.id}
-                          className="flex items-center gap-3 py-2"
+                          className="flex items-center gap-2 sm:gap-3 py-2"
                         >
                           {song.albumArt ? (
                             <img
                               src={song.albumArt}
                               alt=""
-                              className="size-10 rounded border border-[#3D2817] object-cover"
+                              className="size-10 rounded border border-[#3D2817] object-cover flex-shrink-0"
                             />
                           ) : (
-                            <div className="size-10 rounded border border-[#3D2817] bg-[#FFE8BA]" />
+                            <div className="size-10 rounded border border-[#3D2817] bg-[#FFE8BA] flex-shrink-0" />
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold text-[#3D2817] truncate">
@@ -341,23 +344,23 @@ export function PlaylistView() {
                             title={
                               already ? "Already in this playlist" : "Add to playlist"
                             }
-                            className={
+                            className={`flex-shrink-0 ${
                               already
                                 ? "bg-[#E6D5B8] text-[#8B6F47] border-2 border-[#B8A080] cursor-not-allowed"
                                 : "bg-[#FF9F45] hover:bg-[#FF8C2E] text-[#3D2817] font-semibold border-2 border-[#3D2817]"
-                            }
+                            }`}
                           >
                             {already ? (
                               <>
-                                <Check className="size-4 mr-1" />
-                                Added
+                                <Check className="size-4 sm:mr-1" />
+                                <span className="hidden sm:inline">Added</span>
                               </>
                             ) : saving ? (
-                              "Adding…"
+                              "…"
                             ) : (
                               <>
-                                <Plus className="size-4 mr-1" />
-                                Add
+                                <Plus className="size-4 sm:mr-1" />
+                                <span className="hidden sm:inline">Add</span>
                               </>
                             )}
                           </Button>
@@ -407,14 +410,14 @@ export function PlaylistView() {
                     !isEditing &&
                     navigate(`/playlist/${playlistId}/song/${song.id}`)
                   }
-                  className={`px-4 py-4 border-b border-[#E6D5B8] last:border-b-0 group ${
+                  className={`px-3 sm:px-4 py-3 sm:py-4 border-b border-[#E6D5B8] last:border-b-0 group ${
                     isEditing
                       ? ""
                       : "hover:bg-[#FFF8E7] transition-colors cursor-pointer"
                   }`}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="w-8 text-[#8B6F47] text-sm text-right relative">
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="w-6 sm:w-8 text-[#8B6F47] text-sm text-right relative flex-shrink-0">
                       <span
                         className={isEditing ? "" : "group-hover:invisible"}
                       >
@@ -437,20 +440,22 @@ export function PlaylistView() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3
-                        className={`font-semibold text-[#3D2817] ${
+                        className={`font-semibold text-[#3D2817] truncate ${
                           isEditing ? "" : "group-hover:underline"
                         }`}
                       >
                         {song.title}
                       </h3>
-                      <p className="text-sm text-[#8B6F47]">{song.artist}</p>
+                      <p className="text-sm text-[#8B6F47] truncate">{song.artist}</p>
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-[#8B6F47]">
+                    <div className="flex items-center gap-2 sm:gap-4 text-sm text-[#8B6F47] flex-shrink-0">
                       <div className="flex items-center gap-1">
                         <MessageSquare className="size-4" />
                         <span>{song.noteCount}</span>
                       </div>
-                      <div>{song.duration}</div>
+                      {/* Duration is nice-to-have, not essential — hide on
+                          phones where the row is tight. */}
+                      <div className="hidden sm:block tabular-nums">{song.duration}</div>
                       {isEditing && (
                         <button
                           onClick={(e) => {
@@ -459,7 +464,7 @@ export function PlaylistView() {
                           }}
                           disabled={removing}
                           title="Remove from playlist"
-                          className="p-2 rounded border-2 border-[#3D2817] bg-white hover:bg-red-50 hover:text-red-700 text-[#3D2817] disabled:opacity-50"
+                          className="p-1.5 sm:p-2 rounded border-2 border-[#3D2817] bg-white hover:bg-red-50 hover:text-red-700 text-[#3D2817] disabled:opacity-50"
                           aria-label={`Remove ${song.title}`}
                         >
                           {removing ? (
