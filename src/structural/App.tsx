@@ -9,6 +9,7 @@ import { LandingPage } from "../components/pages/LandingPage";
 import { HomePage } from "../components/pages/HomePage";
 import { PlaylistView } from "../components/pages/PlaylistView";
 import { AppPlaylistView } from "../components/pages/AppPlaylistView";
+import { AppSongView } from "../components/pages/AppSongView";
 import { SongView } from "../components/pages/SongView";
 import { NowPlayingBar } from "../components/pages/NowPlayingBar";
 
@@ -49,6 +50,9 @@ const router = createHashRouter([
   // Public route — no auth required. AppPlaylistView handles the anonymous
   // rendering path itself.
   { path: "/app-playlist/:playlistId", Component: AppPlaylistView },
+  // Per-song view for SpinDeck-built playlists. Also public so shared
+  // links to a single song work for anonymous viewers.
+  { path: "/app-playlist/:playlistId/song/:songId", Component: AppSongView },
 ]);
 
 // ---------------------------------------------------------------------------

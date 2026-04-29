@@ -1,67 +1,108 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Play, Pause, Plus, Send, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  LogOut,
+  Pause,
+  Pencil,
+  Play,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { useSpotify } from "../data/SpotifyContext";
 import { usePlayer } from "../data/PlayerContext";
 import { useAppUser } from "../data/AppUserContext";
 import { fetchTrack } from "../data/spotifyApi";
-import type { Song } from "../data/mockData";
+import type { Song } from "../data/types";
 import {
   fetchNotes,
   createNote,
   deleteNote,
-  timeAgo,
+  updateNote,
   type NoteWithAuthor,
 } from "../data/notesApi";
+import { formatError } from "../data/formatError";
+
+// =============================================================================
+// SongView — per-song page for Spotify-sourced playlists.
+// =============================================================================
+// Visually unified with AppSongView: big art header + a single "description"
+// block (no multi-author comment feed). The description is the *current
+// user's own personal note* about the track — edit-in-place, one per user.
+//
+// Other users' notes still live in the DB (the notes table is multi-author),
+// but we don't surface them here anymore — the comment-style stack felt off
+// against the rest of the app's liner-notes aesthetic. If a viewer hasn't
+// written one yet they get an empty state inviting them to add theirs.
+// =============================================================================
 
 export function SongView() {
   const { playlistId, songId } = useParams();
   const navigate = useNavigate();
   const { token } = useSpotify();
-  const { user } = useAppUser();
+  const { user, signOut } = useAppUser();
   const { play, isReady, isPlaying, currentTrack, togglePlayPause } = usePlayer();
 
   const [song, setSong] = useState<Song | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Pull every note for this song (multi-author, historical) but only
+  // surface the current user's most recent one. The rest of the rows
+  // are kept in state as raw data should we ever want to reintroduce a
+  // "what others said" view.
   const [notes, setNotes] = useState<NoteWithAuthor[]>([]);
   const [notesLoading, setNotesLoading] = useState(true);
   const [notesError, setNotesError] = useState<string | null>(null);
 
-  const [showAddNote, setShowAddNote] = useState(false);
-  const [newNote, setNewNote] = useState("");
-  const [posting, setPosting] = useState(false);
-  const [postError, setPostError] = useState<string | null>(null);
+  // Inline editor state.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Load track metadata. Requires Spotify for now — will later be
-  // replaced by the spotify-proxy Edge Function so Public Mode users
-  // can see titles/art too.
+  // Load track metadata. Requires Spotify; viewers without it can't reach
+  // this page (the route is gated behind RequireAuth and the playlist
+  // listing only renders for connected users).
   useEffect(() => {
     if (!token || !songId) return;
     fetchTrack(token, songId)
       .then(setSong)
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .catch((e) => setError(formatError(e, "Couldn't load track.")))
       .finally(() => setLoading(false));
   }, [token, songId]);
 
-  // Load notes from Supabase.
+  // Load notes from Supabase. Sorted desc by created_at server-side, so
+  // the first match for the current user is their most recent.
   useEffect(() => {
     if (!songId) return;
     setNotesLoading(true);
     setNotesError(null);
     fetchNotes("song", songId)
       .then(setNotes)
-      .catch((e) => setNotesError(e instanceof Error ? e.message : String(e)))
+      .catch((e) => setNotesError(formatError(e, "Couldn't load description.")))
       .finally(() => setNotesLoading(false));
   }, [songId]);
+
+  // Personal description = current user's most recent note for this song.
+  const myNote: NoteWithAuthor | null = useMemo(() => {
+    if (!user?.id) return null;
+    return notes.find((n) => n.authorId === user.id) ?? null;
+  }, [notes, user?.id]);
+
+  // Reset draft whenever the underlying personal note changes (initial
+  // load, save round-trip, etc.).
+  useEffect(() => {
+    setDraft(myNote?.body ?? "");
+  }, [myNote?.body]);
 
   if (loading) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-[#FFF8E7]">
-        <p className="text-[#8B6F47] text-lg">Loading song...</p>
+        <p className="text-[#8B6F47] text-lg">Loading song…</p>
       </div>
     );
   }
@@ -79,45 +120,56 @@ export function SongView() {
     );
   }
 
-  const handleAddNote = async () => {
-    if (!user || !songId || !newNote.trim()) return;
-    setPosting(true);
-    setPostError(null);
+  async function handleSave() {
+    if (!user || !songId) return;
+    const body = draft.trim();
+    if (!body) return;
+    setSaving(true);
+    setSaveError(null);
     try {
-      const created = await createNote({
-        authorId: user.id,
-        targetType: "song",
-        targetId: songId,
-        body: newNote,
-      });
-      // Prepend so the newest note appears at the top (matches the
-      // `order created_at desc` we use in fetchNotes).
-      setNotes((prev) => [created, ...prev]);
-      setNewNote("");
-      setShowAddNote(false);
+      if (myNote) {
+        // Edit-in-place — preserves the original created_at + id.
+        const updated = await updateNote(myNote.id, body);
+        setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+      } else {
+        const created = await createNote({
+          authorId: user.id,
+          targetType: "song",
+          targetId: songId,
+          body,
+        });
+        // Prepend so the user's row is first (matches the order from
+        // fetchNotes which is desc by created_at).
+        setNotes((prev) => [created, ...prev]);
+      }
+      setEditing(false);
     } catch (e) {
-      setPostError(e instanceof Error ? e.message : String(e));
+      setSaveError(formatError(e, "Couldn't save description."));
     } finally {
-      setPosting(false);
+      setSaving(false);
     }
-  };
+  }
 
-  const handleDeleteNote = async (noteId: string) => {
-    // Optimistic: drop from UI first, restore if the delete fails.
-    const prev = notes;
-    setNotes((ns) => ns.filter((n) => n.id !== noteId));
+  async function handleDelete() {
+    if (!myNote) return;
+    // Optimistic: drop locally, restore on failure.
+    const snapshot = notes;
+    setNotes((ns) => ns.filter((n) => n.id !== myNote.id));
+    setEditing(false);
     try {
-      await deleteNote(noteId);
+      await deleteNote(myNote.id);
     } catch (e) {
-      setNotes(prev);
-      setNotesError(e instanceof Error ? e.message : String(e));
+      setNotes(snapshot);
+      setNotesError(formatError(e, "Couldn't delete description."));
     }
-  };
+  }
+
+  const isThisTrack = currentTrack?.id === songId;
 
   return (
     <div className="min-h-screen w-full bg-[#FFF8E7] pb-24">
       <header className="border-b-2 border-[#3D2817] bg-[#FFE8BA] sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 sm:px-8 py-3 sm:py-4">
+        <div className="max-w-3xl mx-auto px-4 sm:px-8 py-3 sm:py-4 flex items-center justify-between gap-2">
           <Button
             variant="ghost"
             onClick={() => navigate(`/playlist/${playlistId}`)}
@@ -126,12 +178,23 @@ export function SongView() {
             <ArrowLeft className="size-5 mr-2" />
             Back to playlist
           </Button>
+          {user && (
+            <Button
+              variant="ghost"
+              onClick={() => void signOut()}
+              className="text-[#8B6F47] hover:text-red-600"
+            >
+              <LogOut className="size-4 mr-2" />
+              Log out
+            </Button>
+          )}
         </div>
       </header>
 
       <div className="max-w-3xl mx-auto px-4 sm:px-8 py-6 sm:py-12">
+        {/* ----- Track header ----- */}
         <div className="mb-8 sm:mb-12 flex flex-col items-center sm:items-start text-center sm:text-left">
-          {song.albumArt && (
+          {song.albumArt ? (
             <div className="mb-4 sm:mb-6">
               <img
                 src={song.albumArt}
@@ -139,16 +202,21 @@ export function SongView() {
                 className="w-48 h-48 sm:w-64 sm:h-64 object-cover rounded-lg border-4 border-[#3D2817] shadow-[8px_8px_0px_0px_rgba(61,40,23,1)]"
               />
             </div>
+          ) : (
+            <div className="mb-4 sm:mb-6 w-48 h-48 sm:w-64 sm:h-64 rounded-lg border-4 border-[#3D2817] bg-[#FFE8BA] shadow-[8px_8px_0px_0px_rgba(61,40,23,1)]" />
           )}
-          <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3 text-[#3D2817] break-words">{song.title}</h1>
+          <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3 text-[#3D2817] break-words">
+            {song.title}
+          </h1>
           <p className="text-base sm:text-xl text-[#8B6F47] mb-1">{song.artist}</p>
-          <p className="text-sm sm:text-base text-[#8B6F47]">{song.album}</p>
+          {song.album && (
+            <p className="text-sm sm:text-base text-[#8B6F47]">{song.album}</p>
+          )}
           <div className="mt-3 sm:mt-4 flex items-center gap-4 sm:gap-6 text-sm text-[#8B6F47]">
-            <span>{song.duration}</span>
+            {song.duration && <span>{song.duration}</span>}
             {isReady && (
               <button
                 onClick={() => {
-                  const isThisTrack = currentTrack?.id === songId;
                   if (isThisTrack) {
                     togglePlayPause();
                   } else {
@@ -156,8 +224,9 @@ export function SongView() {
                   }
                 }}
                 className="p-3 bg-[#FF9F45] text-[#3D2817] rounded-full border-2 border-[#3D2817] shadow-[3px_3px_0px_0px_rgba(61,40,23,1)] hover:shadow-[1px_1px_0px_0px_rgba(61,40,23,1)] hover:scale-105 transition-all"
+                aria-label={isPlaying && isThisTrack ? "Pause" : "Play"}
               >
-                {isPlaying && currentTrack?.id === songId ? (
+                {isPlaying && isThisTrack ? (
                   <Pause className="size-5" />
                 ) : (
                   <Play className="size-5 ml-0.5" />
@@ -167,106 +236,96 @@ export function SongView() {
           </div>
         </div>
 
-        {!showAddNote && (
-          <div className="mb-8">
-            <Button
-              onClick={() => setShowAddNote(true)}
-              disabled={!user}
-              className="w-full bg-[#5B9BD5] hover:bg-[#4A8BC4] text-white font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all disabled:opacity-60"
-            >
-              <Plus className="size-5 mr-2" />
-              Add Note
-            </Button>
-          </div>
-        )}
-
-        {showAddNote && (
-          <div className="mb-8 border-2 border-[#3D2817] rounded-lg p-4 sm:p-6 bg-white shadow-[4px_4px_0px_0px_rgba(61,40,23,1)]">
-            <h3 className="font-semibold mb-3 text-[#3D2817]">Add Your Note</h3>
-            <Textarea
-              placeholder="Share your thoughts about this song..."
-              value={newNote}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewNote(e.target.value)}
-              className="mb-3 bg-[#FFF8E7]"
-              rows={4}
-              maxLength={2000}
-            />
-            {postError && (
-              <p className="text-sm text-red-600 mb-3" role="alert">{postError}</p>
-            )}
-            <div className="flex gap-2">
-              <Button
-                onClick={handleAddNote}
-                disabled={posting || !newNote.trim()}
-                className="bg-[#FF9F45] hover:bg-[#FF8C2E] text-[#3D2817] font-semibold border-2 border-[#3D2817] disabled:opacity-60"
-              >
-                <Send className="size-4 mr-2" />
-                {posting ? "Posting…" : "Post"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowAddNote(false);
-                  setPostError(null);
-                }}
-                disabled={posting}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
-
+        {/* ----- Personal description ----- */}
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6 text-[#3D2817]">Notes</h2>
+          <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2 flex-wrap">
+            <h2 className="text-xl sm:text-2xl font-bold text-[#3D2817]">
+              Your description
+            </h2>
+            {!editing && user && (
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" onClick={() => setEditing(true)}>
+                  <Pencil className="size-4 mr-2" />
+                  {myNote ? "Edit" : "Add description"}
+                </Button>
+                {myNote && (
+                  <Button
+                    onClick={() => void handleDelete()}
+                    variant="outline"
+                    className="bg-white border-2 border-[#3D2817] text-[#8B6F47] hover:text-red-700 hover:bg-red-50"
+                    title="Delete your description"
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
 
           {notesLoading ? (
-            <div className="border-2 border-[#3D2817] rounded-lg p-8 sm:p-12 text-center text-[#8B6F47] bg-white">
-              <p>Loading notes…</p>
+            <div className="border-2 border-[#3D2817] rounded-lg p-6 sm:p-8 text-center text-[#8B6F47] bg-white">
+              <p>Loading description…</p>
             </div>
           ) : notesError ? (
             <div className="border-2 border-red-600 rounded-lg p-4 sm:p-6 bg-[#FFE4E4] text-[#3D2817]">
-              <p className="font-semibold mb-1">Couldn't load notes</p>
+              <p className="font-semibold mb-1">Couldn't load description</p>
               <p className="text-sm">{notesError}</p>
             </div>
-          ) : notes.length === 0 ? (
-            <div className="border-2 border-[#3D2817] rounded-lg p-8 sm:p-12 text-center text-[#8B6F47] bg-white">
-              <p>No notes yet. Be the first to share your thoughts!</p>
+          ) : editing ? (
+            <div className="space-y-3 border-2 border-[#3D2817] rounded-lg p-4 sm:p-5 bg-white shadow-[4px_4px_0px_0px_rgba(61,40,23,1)]">
+              <Textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={5}
+                maxLength={2000}
+                placeholder="What's the story with this track? Write it like a liner note."
+                className="bg-[#FFF8E7]"
+              />
+              {saveError && (
+                <p className="text-sm text-red-700 bg-red-50 border border-red-300 rounded px-3 py-2">
+                  {saveError}
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={() => void handleSave()}
+                  disabled={saving || !draft.trim()}
+                  className="bg-[#FF9F45] hover:bg-[#FF8C2E] text-[#3D2817] font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
+                >
+                  <Save className="size-4 mr-2" />
+                  {saving ? "Saving…" : "Save"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDraft(myNote?.body ?? "");
+                    setEditing(false);
+                    setSaveError(null);
+                  }}
+                  disabled={saving}
+                >
+                  <X className="size-4 mr-2" />
+                  Cancel
+                </Button>
+              </div>
             </div>
+          ) : myNote ? (
+            // Same blockquote treatment as AppPlaylistView's annotation —
+            // both kinds of song view now read identically.
+            <blockquote className="border-l-4 border-[#FF9F45] pl-4 sm:pl-5 py-3 text-base sm:text-lg text-[#3D2817] whitespace-pre-wrap bg-white rounded-r-lg border-y-2 border-r-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,0.3)]">
+              {myNote.body}
+            </blockquote>
           ) : (
-            <div className="space-y-4">
-              {notes.map((note) => {
-                const isMine = user?.id === note.authorId;
-                const displayLabel =
-                  note.authorDisplayName && note.authorDisplayName.length > 0
-                    ? `${note.authorDisplayName} · @${note.authorUsername}`
-                    : `@${note.authorUsername}`;
-                return (
-                  <div
-                    key={note.id}
-                    className="border-2 border-[#3D2817] rounded-lg p-4 sm:p-6 bg-white shadow-[4px_4px_0px_0px_rgba(61,40,23,0.3)] hover:shadow-[6px_6px_0px_0px_rgba(61,40,23,0.4)] transition-all"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <p className="font-semibold text-[#3D2817]">{displayLabel}</p>
-                        <p className="text-sm text-[#8B6F47]">{timeAgo(note.createdAt)}</p>
-                      </div>
-                      {isMine && (
-                        <button
-                          onClick={() => handleDeleteNote(note.id)}
-                          aria-label="Delete note"
-                          className="text-[#8B6F47] hover:text-red-600 transition-colors p-1"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-[#3D2817] leading-relaxed whitespace-pre-wrap">
-                      {note.body}
-                    </p>
-                  </div>
-                );
-              })}
+            <div className="border-2 border-dashed border-[#8B6F47] rounded-lg p-6 sm:p-8 text-center text-[#8B6F47] bg-white/50">
+              {user ? (
+                <p>
+                  No description yet. Tap{" "}
+                  <span className="font-semibold">Add description</span>{" "}
+                  above to write your own liner-note for this track.
+                </p>
+              ) : (
+                <p>Sign in to add your own description.</p>
+              )}
             </div>
           )}
         </div>

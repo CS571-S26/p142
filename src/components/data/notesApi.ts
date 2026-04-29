@@ -102,6 +102,32 @@ export async function deleteNote(noteId: string): Promise<void> {
   if (error) throw error;
 }
 
+// Edit an existing note in place. Used by the personal-description
+// editor on SongView so an edit preserves the original created_at and
+// id rather than rotating the row out from under any references.
+// RLS is already author_id = auth.uid() for updates, so the DB will
+// reject any attempt to edit someone else's note.
+export async function updateNote(
+  noteId: string,
+  body: string
+): Promise<NoteWithAuthor> {
+  const trimmed = body.trim();
+  if (trimmed.length === 0) throw new Error("Note body can't be empty.");
+  if (trimmed.length > 2000) throw new Error("Note is too long (max 2000 chars).");
+
+  const { data, error } = await supabase
+    .from("notes")
+    .update({ body: trimmed })
+    .eq("id", noteId)
+    .select(
+      "id, body, created_at, author_id, target_type, target_id, author:app_users!notes_author_id_fkey(username, display_name)"
+    )
+    .single();
+
+  if (error) throw error;
+  return rowToNote(data as unknown as NoteRow);
+}
+
 // ---------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------

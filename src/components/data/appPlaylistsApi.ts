@@ -1,5 +1,5 @@
 import { supabase } from "./supabaseClient";
-import type { Song } from "./mockData";
+import type { Song } from "./types";
 
 // ---------------------------------------------------------------------------
 // appPlaylistsApi — CRUD for SpinDeck-native annotated playlists.
@@ -384,4 +384,110 @@ export async function updateAnnotation(input: {
     .eq("playlist_id", input.playlistId)
     .eq("position", input.position);
   if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
+// Import a Spotify playlist as a SpinDeck snapshot.
+// ---------------------------------------------------------------------------
+// "Share with SpinDeck" on a Spotify-sourced playlist runs this. It forks the
+// playlist into our own tables — name, description, and the full track list
+// (with metadata cached the same way addSong caches it) — so the result
+// behaves exactly like a hand-built SpinDeck playlist: shareable, save-able,
+// invitable, annotatable.
+//
+// Re-importing the same Spotify playlist by the same user is a no-op: we
+// look up the previous snapshot via (owner_id, imported_from_spotify_id)
+// and return its id. This lets the UI flip the button from "Share with
+// SpinDeck" to "Open SpinDeck copy" once an import exists, with no risk
+// of users accidentally piling up duplicates.
+//
+// We intentionally do NOT keep the snapshot in sync with Spotify. If the
+// owner of the Spotify playlist adds tracks later, those won't show up
+// here unless the user explicitly re-imports — and even then, today's
+// implementation reuses the existing snapshot rather than refreshing it.
+// ---------------------------------------------------------------------------
+
+// Returns the existing imported app_playlist id for this (owner, source)
+// pair, or null if the user hasn't imported this Spotify playlist yet.
+export async function findImportedSpotifyPlaylist(input: {
+  ownerId: string;
+  spotifyPlaylistId: string;
+}): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("app_playlists")
+    .select("id")
+    .eq("owner_id", input.ownerId)
+    .eq("imported_from_spotify_id", input.spotifyPlaylistId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.id ?? null;
+}
+
+export async function importSpotifyPlaylist(input: {
+  ownerId: string;
+  spotifyPlaylistId: string;
+  name: string;
+  description?: string;
+  vinylColor?: string;
+  songs: Song[];
+}): Promise<string> {
+  // 1) Reuse path — does a snapshot already exist for this user?
+  const existing = await findImportedSpotifyPlaylist({
+    ownerId: input.ownerId,
+    spotifyPlaylistId: input.spotifyPlaylistId,
+  });
+  if (existing) return existing;
+
+  // 2) Otherwise, create a new app_playlist row tagged with the source.
+  const name = (input.name || "").trim() || "Imported playlist";
+  const description = (input.description ?? "").trim();
+  const vinylColor = input.vinylColor ?? VINYL_COLORS[0];
+
+  const { data: created, error: insertErr } = await supabase
+    .from("app_playlists")
+    .insert({
+      owner_id: input.ownerId,
+      name: name.slice(0, 80),
+      description,
+      vinyl_color: vinylColor,
+      is_public: true,
+      imported_from_spotify_id: input.spotifyPlaylistId,
+    })
+    .select("id")
+    .single();
+
+  if (insertErr) throw insertErr;
+  const playlistId = (created as { id: string }).id;
+
+  // 3) Bulk-insert songs with their cached metadata. Positions are dense
+  // and 0-indexed, matching addSong's ordering convention.
+  if (input.songs.length > 0) {
+    const rows = input.songs.map((song, i) => ({
+      playlist_id: playlistId,
+      position: i,
+      spotify_track_id: song.id,
+      added_by: input.ownerId,
+      annotation: null,
+      title: song.title || null,
+      artist: song.artist || null,
+      album: song.album || null,
+      album_art_url: song.albumArt || null,
+      duration_ms: typeof song.durationMs === "number" ? song.durationMs : null,
+    }));
+
+    const { error: songsErr } = await supabase
+      .from("app_playlist_songs")
+      .insert(rows);
+
+    if (songsErr) {
+      // Best-effort cleanup so a half-imported playlist doesn't litter the
+      // user's library if the songs insert fails. RLS already restricts
+      // delete to owner_id = auth.uid(), which is the same user who just
+      // ran the insert above, so this is allowed.
+      await supabase.from("app_playlists").delete().eq("id", playlistId);
+      throw songsErr;
+    }
+  }
+
+  return playlistId;
 }

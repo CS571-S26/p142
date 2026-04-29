@@ -1,4 +1,4 @@
-import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
+import { Play, Pause, Shuffle, SkipBack, SkipForward } from "lucide-react";
 import { usePlayer } from "../data/PlayerContext";
 
 function formatTime(ms: number): string {
@@ -15,10 +15,12 @@ export function NowPlayingBar() {
     currentTrack,
     position,
     duration,
+    isShuffled,
     togglePlayPause,
     skipNext,
     skipPrev,
     seek,
+    toggleShuffle,
   } = usePlayer();
 
   if (!isReady || !currentTrack) return null;
@@ -58,6 +60,31 @@ export function NowPlayingBar() {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          {/* Shuffle — toggleable like Spotify's. Orange icon + a small
+              dot underneath when active, so the on-state is unmistakable
+              at a glance. The button only renders inside the bar, which
+              itself only appears when something's playing — so it
+              implicitly satisfies "only show when a playlist is
+              playing." */}
+          <button
+            onClick={() => void toggleShuffle()}
+            aria-label="Shuffle"
+            aria-pressed={isShuffled}
+            title={isShuffled ? "Shuffle is on" : "Shuffle is off"}
+            className={`relative p-1.5 rounded-full transition-colors flex items-center justify-center ${
+              isShuffled
+                ? "text-[#FF9F45] hover:bg-[#8B6F47]"
+                : "text-white hover:bg-[#8B6F47]"
+            }`}
+          >
+            <Shuffle className="size-4" />
+            {isShuffled && (
+              <span
+                aria-hidden="true"
+                className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 size-1 rounded-full bg-[#FF9F45]"
+              />
+            )}
+          </button>
           <button
             onClick={skipPrev}
             className="p-1.5 hover:bg-[#8B6F47] rounded-full transition-colors"

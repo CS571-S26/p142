@@ -1,9 +1,15 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { LogOut } from "lucide-react";
 import { Button } from "./ui/button";
 import { useSpotify } from "../data/SpotifyContext";
 import { useAppUser } from "../data/AppUserContext";
 import { SpinDeckLogo } from "./SpinDeckLogo";
+import {
+  consumePostAuthRedirect,
+  extractAppPlaylistId,
+} from "../data/postAuthRedirect";
+import { savePlaylist } from "../data/savedPlaylistsApi";
 
 export function LandingPage() {
   const navigate = useNavigate();
@@ -17,6 +23,52 @@ export function LandingPage() {
   const handleSignOut = () => {
     void signOut();
   };
+
+  // -----------------------------------------------------------------
+  // Honor a pending post-auth redirect.
+  //
+  // When an anonymous viewer clicks Sign up from a public share page,
+  // AppPlaylistView stashes { returnTo, autoSave } in sessionStorage.
+  // Once they're signed in the router lands them here at "/". This
+  // effect consumes the stash, optionally auto-saves the playlist,
+  // and bounces them back to where they started — so the share-link
+  // flow becomes "open link → sign up → land back on the playlist
+  // (saved)" instead of the previous double-open dead-end.
+  // -----------------------------------------------------------------
+  const [redirecting, setRedirecting] = useState(false);
+  useEffect(() => {
+    if (!user?.id) return;
+    const intent = consumePostAuthRedirect();
+    if (!intent) return;
+    setRedirecting(true);
+
+    void (async () => {
+      // Best-effort auto-save. If it fails (network, RLS, anything),
+      // we still want to land the user on the playlist — they can hit
+      // the Save button manually from there.
+      if (intent.autoSave) {
+        const playlistId = extractAppPlaylistId(intent.returnTo);
+        if (playlistId) {
+          try {
+            await savePlaylist(user.id, playlistId);
+          } catch {
+            // Swallow — auto-save is convenience, not a hard requirement.
+          }
+        }
+      }
+      navigate(intent.returnTo, { replace: true });
+    })();
+  }, [user?.id, navigate]);
+
+  if (redirecting) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-[#FFF8E7]">
+        <p className="text-[#8B6F47]">
+          Welcome — taking you back to the playlist…
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-[#FFF8E7] px-4 py-8">

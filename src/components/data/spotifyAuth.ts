@@ -129,24 +129,70 @@ export async function exchangeCodeForTokens(
 // ---------------------------------------------------------------------------
 // Refresh an expired access token
 // ---------------------------------------------------------------------------
+// Two error modes matter to callers:
+//
+//   * AUTH errors (the refresh token is dead — Spotify says invalid_grant,
+//     401, or the user revoked our app). The session is unrecoverable
+//     and the user has to reconnect. Tokens should be cleared.
+//
+//   * TRANSIENT errors (network down, DNS failure, 5xx, timeout). The
+//     refresh token is still good; the request just couldn't complete.
+//     Callers should KEEP the cached tokens and try again later.
+//
+// We surface that distinction with `kind` on the thrown error so the
+// SpotifyContext doesn't accidentally log users out on a flaky Wi-Fi
+// blip after a laptop wakes from sleep.
+
+export type RefreshErrorKind = "auth" | "transient";
+
+export class RefreshError extends Error {
+  kind: RefreshErrorKind;
+  status: number | null;
+  constructor(kind: RefreshErrorKind, message: string, status: number | null = null) {
+    super(message);
+    this.name = "RefreshError";
+    this.kind = kind;
+    this.status = status;
+  }
+}
 
 export async function refreshAccessToken(
   clientId: string,
   refreshToken: string
 ): Promise<TokenResponse> {
-  const res = await fetch(TOKEN_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: clientId,
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: clientId,
+      }),
+    });
+  } catch (e) {
+    // Network-level failure (offline, DNS, CORS preflight blocked, etc.).
+    // Always transient — the token itself is presumably still valid.
+    throw new RefreshError(
+      "transient",
+      e instanceof Error ? `Network error during token refresh: ${e.message}` : "Network error during token refresh"
+    );
+  }
 
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Token refresh failed (${res.status}): ${body}`);
+    const body = await res.text().catch(() => "");
+    // Spotify uses 400 invalid_grant when the refresh token is no longer
+    // accepted (revoked, expired, rotated). 401 from the token endpoint
+    // also means the credentials are bad. Anything else (429, 5xx, etc.)
+    // we treat as transient.
+    const isAuthError =
+      res.status === 400 || res.status === 401 || /invalid_grant/i.test(body);
+    throw new RefreshError(
+      isAuthError ? "auth" : "transient",
+      `Token refresh failed (${res.status}): ${body}`,
+      res.status
+    );
   }
 
   return res.json();
@@ -163,6 +209,11 @@ export function saveTokens(data: TokenResponse) {
   }
   const expiresAt = Date.now() + data.expires_in * 1000;
   localStorage.setItem(LS_TOKEN_EXPIRY, expiresAt.toString());
+  // Notify same-tab listeners (the SpotifyContext) that we have a fresh
+  // access token. The native `storage` event only fires in OTHER tabs,
+  // so without this, an in-tab refresh (e.g. from spotifyApi after a
+  // 401) would update localStorage but leave the React state stale.
+  emitTokenRefresh(data.access_token, expiresAt);
 }
 
 export function loadTokens() {
@@ -193,4 +244,29 @@ export function getOwnerAppUserId(): string | null {
 
 export function getRedirectUri(): string {
   return window.location.origin + "/p142/";
+}
+
+// ---------------------------------------------------------------------------
+// In-tab token-refresh bus
+// ---------------------------------------------------------------------------
+// Any module that successfully refreshes the access token (the scheduled
+// timer in SpotifyContext, the 401-recovery path in spotifyApi, or a future
+// caller) goes through saveTokens(), which emits one of these events. The
+// SpotifyContext subscribes so its `token` state stays in sync without
+// having to re-mount the provider.
+
+export const SPOTIFY_TOKEN_REFRESH_EVENT = "spindeck:spotify-token-refresh";
+
+export interface TokenRefreshDetail {
+  accessToken: string;
+  expiresAt: number;
+}
+
+function emitTokenRefresh(accessToken: string, expiresAt: number) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<TokenRefreshDetail>(SPOTIFY_TOKEN_REFRESH_EVENT, {
+      detail: { accessToken, expiresAt },
+    })
+  );
 }

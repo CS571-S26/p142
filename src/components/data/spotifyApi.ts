@@ -1,9 +1,10 @@
-import type { Playlist, Song } from "./mockData";
+import type { Playlist, Song } from "./types";
 import {
   refreshAccessToken,
   loadTokens,
   saveTokens,
   clearTokens,
+  RefreshError,
 } from "./spotifyAuth";
 
 const BASE = "https://api.spotify.com/v1";
@@ -36,6 +37,7 @@ interface SpotifyPlaylistItem {
   name: string;
   description: string;
   images: SpotifyImage[];
+  owner?: { id: string; display_name?: string };
   tracks?: { total: number };
   items?: { total: number };
 }
@@ -85,9 +87,20 @@ async function spotifyFetchRaw<T>(
         const data = await refreshAccessToken(CLIENT_ID, refreshToken);
         saveTokens(data);
         res = await fetch(url, buildInit(data.access_token, options));
-      } catch {
-        clearTokens();
-        throw new Error("Session expired — please log in again.");
+      } catch (e) {
+        // Only nuke the user's session when the refresh token itself is
+        // dead. Transient failures (network, 5xx) leave the cached tokens
+        // in place so the user is still connected once connectivity
+        // returns; the original 401 propagates as a normal API error.
+        if (e instanceof RefreshError && e.kind === "auth") {
+          clearTokens();
+          throw new Error("Session expired — please log in again.");
+        }
+        throw new Error(
+          e instanceof Error
+            ? `Couldn't refresh Spotify access token: ${e.message}`
+            : "Couldn't refresh Spotify access token."
+        );
       }
     }
   }
@@ -111,21 +124,29 @@ async function spotifyFetch<T>(
 }
 
 export async function fetchUserPlaylists(token: string): Promise<Playlist[]> {
-  const data = await spotifyFetch<{ items: SpotifyPlaylistItem[] }>(
-    "/me/playlists?limit=20",
-    token
+  const [me, data] = await Promise.all([
+    spotifyFetch<{ id: string }>("/me", token),
+    spotifyFetch<{ items: SpotifyPlaylistItem[] }>(
+      "/me/playlists?limit=50",
+      token
+    ),
+  ]);
+
+  // `/me/playlists` includes playlists you follow that are owned by other
+  // users (and Spotify editorial accounts). In dev-mode those often 403 on
+  // full playlist reads — only list playlists we own so Home opens reliably.
+  const mine = data.items.filter(
+    (p) => p != null && p.owner?.id === me.id
   );
 
-  return data.items
-    .filter((p) => p != null)
-    .map((p, i) => ({
-      id: p.id,
-      name: p.name,
-      description: p.description || "No description",
-      vinylColor: pickColor(i),
-      songCount: p.items?.total ?? p.tracks?.total ?? 0,
-      songs: [],
-    }));
+  return mine.map((p, i) => ({
+    id: p.id,
+    name: p.name,
+    description: p.description || "No description",
+    vinylColor: pickColor(i),
+    songCount: p.items?.total ?? p.tracks?.total ?? 0,
+    songs: [],
+  }));
 }
 
 export async function fetchTrack(
@@ -366,4 +387,23 @@ export async function startPlayback(
   if (!res.ok && res.status !== 204) {
     throw new Error(`Playback failed: ${res.status}`);
   }
+}
+
+// Toggle Spotify's shuffle mode on the connected device. Spotify treats
+// shuffle as a player-level setting (it persists across track changes
+// and is mirrored back on the next player_state_changed event), so the
+// PlayerContext can stay in sync with whatever the SDK reports rather
+// than holding its own source of truth.
+export async function setShuffle(
+  token: string,
+  deviceId: string,
+  state: boolean
+): Promise<void> {
+  await spotifyFetchRaw<undefined>(
+    `${BASE}/me/player/shuffle?state=${state ? "true" : "false"}&device_id=${encodeURIComponent(
+      deviceId
+    )}`,
+    token,
+    { method: "PUT" }
+  );
 }

@@ -3,12 +3,13 @@ import { useNavigate, useParams, useLocation } from "react-router";
 import {
   ArrowLeft,
   Check,
+  ExternalLink,
   LogOut,
-  MessageSquare,
   Pencil,
   Play,
   Plus,
   Search,
+  Share2,
   Trash2,
   X,
 } from "lucide-react";
@@ -24,7 +25,12 @@ import {
   searchTracks,
 } from "../data/spotifyApi";
 import type { PlaylistDetail } from "../data/spotifyApi";
-import type { Song } from "../data/mockData";
+import {
+  findImportedSpotifyPlaylist,
+  importSpotifyPlaylist,
+} from "../data/appPlaylistsApi";
+import { formatError } from "../data/formatError";
+import type { Song } from "../data/types";
 import { VinylRecord } from "./VinylRecord";
 
 const DEFAULT_COLOR = "#1a1a2e";
@@ -34,7 +40,7 @@ export function PlaylistView() {
   const navigate = useNavigate();
   const location = useLocation();
   const { token } = useSpotify();
-  const { signOut } = useAppUser();
+  const { user, signOut } = useAppUser();
   const { play, isReady } = usePlayer();
 
   const routeState = location.state as {
@@ -62,6 +68,14 @@ export function PlaylistView() {
   const [searching, setSearching] = useState(false);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // --- "Share with SpinDeck" — import this Spotify playlist into our own
+  // tables so the existing share / save / invite UX takes over. Imported
+  // copies are reused on subsequent clicks (see findImportedSpotifyPlaylist),
+  // so the button flips to "Open SpinDeck copy" once one exists.
+  const [importedAppId, setImportedAppId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!token || !playlistId) return;
     setLoading(true);
@@ -77,6 +91,27 @@ export function PlaylistView() {
       .then((u) => setCurrentUserId(u.id))
       .catch(() => setCurrentUserId(null));
   }, [token]);
+
+  // Has this user already imported this Spotify playlist into SpinDeck? If
+  // so, the share button becomes a shortcut to the existing snapshot
+  // instead of creating a new one.
+  useEffect(() => {
+    if (!user?.id || !playlistId) {
+      setImportedAppId(null);
+      return;
+    }
+    findImportedSpotifyPlaylist({
+      ownerId: user.id,
+      spotifyPlaylistId: playlistId,
+    })
+      .then(setImportedAppId)
+      .catch(() => {
+        // Silent — worst case the button reads "Share with SpinDeck" and a
+        // duplicate-import attempt is harmlessly caught by the unique
+        // index. We don't want to surface a scary error before the user
+        // even tries the action.
+      });
+  }, [user?.id, playlistId]);
 
   const playlistName = detail?.name ?? routeState?.name ?? "Playlist";
   const vinylColor = routeState?.vinylColor ?? DEFAULT_COLOR;
@@ -175,6 +210,40 @@ export function PlaylistView() {
     setEditError(null);
   }
 
+  // Fork this Spotify playlist into a SpinDeck app_playlist (or jump to the
+  // existing snapshot). After import we navigate to /app-playlist/:id where
+  // the regular Share / Save / Invite UI lives.
+  async function handleShareWithSpinDeck() {
+    if (!playlistId) return;
+    if (!user?.id) {
+      setImportError("Sign in to share this playlist with SpinDeck.");
+      return;
+    }
+    if (importedAppId) {
+      navigate(`/app-playlist/${importedAppId}`);
+      return;
+    }
+    if (!detail) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      const newId = await importSpotifyPlaylist({
+        ownerId: user.id,
+        spotifyPlaylistId: playlistId,
+        name: detail.name,
+        description: detail.description,
+        vinylColor: vinylColor,
+        songs: detail.songs,
+      });
+      setImportedAppId(newId);
+      navigate(`/app-playlist/${newId}`);
+    } catch (e) {
+      setImportError(formatError(e, "Couldn't import playlist."));
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <div className="min-h-screen w-full bg-[#FFF8E7] pb-24">
       <header className="border-b-2 border-[#3D2817] bg-[#FFE8BA] sticky top-0 z-10">
@@ -235,14 +304,15 @@ export function PlaylistView() {
               {!isEditing ? (
                 <div className="relative group">
                   <Button
+                    variant="secondary"
                     onClick={() => canEdit && setIsEditing(true)}
                     disabled={!canEdit}
                     aria-disabled={!canEdit}
                     title={canEdit ? "Edit playlist" : notEditableReason}
                     className={
                       canEdit
-                        ? "bg-[#FFE8BA] hover:bg-[#F5D99A] text-[#3D2817] font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
-                        : "bg-[#E6D5B8] text-[#8B6F47] font-semibold border-2 border-[#B8A080] cursor-not-allowed opacity-70"
+                        ? undefined
+                        : "!bg-[#E6D5B8] !text-[#8B6F47] !border-[#B8A080] hover:!bg-[#E6D5B8] !shadow-none hover:!shadow-none opacity-80"
                     }
                   >
                     <Pencil className="size-4 mr-2" />
@@ -263,7 +333,48 @@ export function PlaylistView() {
                   Done
                 </Button>
               )}
+
+              {/* Share with SpinDeck — fork this Spotify playlist into our
+                  own annotated-playlist tables. Once an import exists for
+                  this user the button flips to "Open SpinDeck copy" and
+                  jumps to the existing snapshot rather than re-importing. */}
+              {!isEditing && detail && songs.length > 0 && (
+                <Button
+                  variant={importedAppId ? "default" : "secondary"}
+                  onClick={() => void handleShareWithSpinDeck()}
+                  disabled={importing || !user?.id}
+                  title={
+                    !user?.id
+                      ? "Sign in to share"
+                      : importedAppId
+                        ? "Open the SpinDeck copy of this playlist"
+                        : "Import this playlist into SpinDeck so you can share, save, and annotate it"
+                  }
+                  className={
+                    importedAppId
+                      ? "text-[#FAF3E0] font-semibold shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-colors"
+                      : undefined
+                  }
+                >
+                  {importedAppId ? (
+                    <>
+                      <ExternalLink className="size-4 mr-2" />
+                      Open SpinDeck copy
+                    </>
+                  ) : (
+                    <>
+                      <Share2 className="size-4 mr-2" />
+                      {importing ? "Importing…" : "Share with SpinDeck"}
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
+            {importError && (
+              <p className="mt-3 text-sm text-red-700 bg-red-50 border border-red-300 rounded px-3 py-2">
+                {importError}
+              </p>
+            )}
           </div>
         </div>
 
@@ -438,6 +549,20 @@ export function PlaylistView() {
                         </button>
                       )}
                     </div>
+                    {/* Album art mirrors the AppPlaylistView row: 48px
+                        thumbnail with the brown border so both kinds of
+                        playlist look like the same product. Falls back to
+                        an empty cream tile when Spotify hasn't returned
+                        cover art for the track. */}
+                    {song.albumArt ? (
+                      <img
+                        src={song.albumArt}
+                        alt=""
+                        className="size-12 rounded border border-[#3D2817] object-cover flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="size-12 rounded border border-[#3D2817] bg-[#FFE8BA] flex-shrink-0" />
+                    )}
                     <div className="flex-1 min-w-0">
                       <h3
                         className={`font-semibold text-[#3D2817] truncate ${
@@ -449,10 +574,6 @@ export function PlaylistView() {
                       <p className="text-sm text-[#8B6F47] truncate">{song.artist}</p>
                     </div>
                     <div className="flex items-center gap-2 sm:gap-4 text-sm text-[#8B6F47] flex-shrink-0">
-                      <div className="flex items-center gap-1">
-                        <MessageSquare className="size-4" />
-                        <span>{song.noteCount}</span>
-                      </div>
                       {/* Duration is nice-to-have, not essential — hide on
                           phones where the row is tight. */}
                       <div className="hidden sm:block tabular-nums">{song.duration}</div>

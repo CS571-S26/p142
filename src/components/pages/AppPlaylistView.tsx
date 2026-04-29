@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft,
   Bookmark,
   BookmarkCheck,
   Check,
   LogOut,
+  Mail,
   Music,
   Pencil,
   Play,
@@ -36,8 +37,10 @@ import {
   savePlaylist,
   unsavePlaylist,
 } from "../data/savedPlaylistsApi";
+import { setPostAuthRedirect } from "../data/postAuthRedirect";
 import { searchTracks } from "../data/spotifyApi";
-import type { Song } from "../data/mockData";
+import type { Song } from "../data/types";
+import { SendInviteModal } from "./SendInviteModal";
 import { VinylRecord } from "./VinylRecord";
 
 // =============================================================================
@@ -52,10 +55,22 @@ import { VinylRecord } from "./VinylRecord";
 export function AppPlaylistView() {
   const { playlistId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, signOut } = useAppUser();
   const { token, isConnected, login } = useSpotify();
   const { play, isReady } = usePlayer();
+
+  // Anonymous-viewer "Sign up" entry point. Stash the current playlist
+  // path before bouncing to auth so LandingPage can return the user here
+  // (and auto-save the playlist) once they've signed in or signed up.
+  function goToSignup() {
+    setPostAuthRedirect({
+      returnTo: location.pathname,
+      autoSave: true,
+    });
+    navigate("/");
+  }
 
   const [detail, setDetail] = useState<AppPlaylistDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -206,6 +221,13 @@ export function AppPlaylistView() {
       window.prompt("Copy this link:", window.location.href);
     }
   }
+
+  // --- Invite ---------------------------------------------------------------
+  // Any signed-in user (owner or saver) can send an invite. We show a
+  // transient "Invite sent ✓" state on the button for 2s after success
+  // — same pattern as the Share button's clipboard confirmation.
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteJustSent, setInviteJustSent] = useState(false);
 
   // --- Save (bookmark) to library ------------------------------------------
   // `saved` is null while we don't yet know (loading the row), then a
@@ -403,7 +425,7 @@ export function AppPlaylistView() {
             </Button>
           ) : (
             <Button
-              onClick={() => navigate("/")}
+              onClick={goToSignup}
               className="bg-[#FF9F45] hover:bg-[#FF8C2E] text-[#3D2817] font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
             >
               Sign up
@@ -426,7 +448,7 @@ export function AppPlaylistView() {
               save it to your library and annotate your own.
             </p>
             <Button
-              onClick={() => navigate("/")}
+              onClick={goToSignup}
               className="bg-[#FF9F45] hover:bg-[#FF8C2E] text-[#3D2817] font-semibold border-2 border-[#3D2817] flex-shrink-0"
             >
               Sign up
@@ -520,8 +542,8 @@ export function AppPlaylistView() {
                   Copies the current URL to the clipboard. */}
               {!isEditing && (
                 <Button
+                  variant="secondary"
                   onClick={() => void handleShare()}
-                  className="bg-[#FFE8BA] hover:bg-[#F5D99A] text-[#3D2817] font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
                 >
                   {shareStatus === "copied" ? (
                     <>
@@ -537,6 +559,31 @@ export function AppPlaylistView() {
                 </Button>
               )}
 
+              {/* Send invite — any signed-in user (owner OR saver) can
+                  invite another SpinDeck user by username. Mirrors the
+                  semantics of the public share link, but addressed +
+                  with an optional message. Hidden in edit mode and for
+                  anonymous viewers (they get the signup CTA). */}
+              {!isEditing && user && (
+                <Button
+                  variant="secondary"
+                  onClick={() => setInviteOpen(true)}
+                  title="Invite another SpinDeck user to this playlist"
+                >
+                  {inviteJustSent ? (
+                    <>
+                      <Check className="size-4 mr-2" />
+                      Invite sent
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="size-4 mr-2" />
+                      Invite
+                    </>
+                  )}
+                </Button>
+              )}
+
               {/* Save to library — only for signed-in non-owners (owners
                   don't bookmark themselves; anonymous viewers get the
                   signup banner instead). `saved === null` means we're
@@ -544,6 +591,7 @@ export function AppPlaylistView() {
                   layout doesn't pop in once the check resolves. */}
               {!isEditing && user && !isOwner && (
                 <Button
+                  variant={saved ? "default" : "secondary"}
                   onClick={() => void handleToggleSave()}
                   disabled={savingBookmark || saved === null}
                   title={
@@ -553,8 +601,8 @@ export function AppPlaylistView() {
                   }
                   className={
                     saved
-                      ? "bg-[#3D2817] hover:bg-[#2A1B10] text-[#FFF8E7] font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
-                      : "bg-[#FFE8BA] hover:bg-[#F5D99A] text-[#3D2817] font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
+                      ? "text-[#FAF3E0] font-semibold shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-colors"
+                      : undefined
                   }
                 >
                   {saved ? (
@@ -573,10 +621,7 @@ export function AppPlaylistView() {
 
               {isOwner &&
                 (!isEditing ? (
-                  <Button
-                    onClick={() => setIsEditing(true)}
-                    className="bg-[#FFE8BA] hover:bg-[#F5D99A] text-[#3D2817] font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
-                  >
+                  <Button variant="secondary" onClick={() => setIsEditing(true)}>
                     <Pencil className="size-4 mr-2" />
                     Edit
                   </Button>
@@ -785,6 +830,9 @@ export function AppPlaylistView() {
                     offsetIndex: index,
                   })
                 }
+                onOpen={() =>
+                  navigate(`/app-playlist/${detail.id}/song/${entry.trackId}`)
+                }
               />
             ))
           )}
@@ -794,6 +842,23 @@ export function AppPlaylistView() {
           <p className="mt-4 text-sm text-red-700 bg-red-50 border border-red-300 rounded px-3 py-2">
             {error}
           </p>
+        )}
+
+        {/* ----- Send-invite modal ----- */}
+        {inviteOpen && user && (
+          <SendInviteModal
+            senderId={user.id}
+            playlistId={detail.id}
+            playlistName={detail.name}
+            onClose={() => setInviteOpen(false)}
+            onSent={() => {
+              setInviteOpen(false);
+              setInviteJustSent(true);
+              // Match the Share button's "copied" timeout — long enough
+              // to read, short enough not to feel sticky.
+              setTimeout(() => setInviteJustSent(false), 2000);
+            }}
+          />
         )}
 
         {/* ----- Delete-playlist zone (owner, edit mode) ----- */}
@@ -858,6 +923,10 @@ interface SongRowProps {
   saving: string | null;
   canPlay: boolean;
   onPlay: () => void;
+  // Navigate to the per-song page. Only fires from view mode — in edit
+  // mode the row hosts the inline annotation editor, so clicks should
+  // stay on this page.
+  onOpen: () => void;
 }
 
 function SongRow({
@@ -869,6 +938,7 @@ function SongRow({
   saving,
   canPlay,
   onPlay,
+  onOpen,
 }: SongRowProps) {
   // Local draft of the annotation being edited. The parent re-keys this
   // component on `entry.annotation`, so when a save completes the row
@@ -880,7 +950,16 @@ function SongRow({
   const isAnnotating = saving === `annotate:${entry.position}`;
 
   return (
-    <div className="px-3 sm:px-4 py-4 border-b border-[#E6D5B8] last:border-b-0 group">
+    <div
+      onClick={() => {
+        if (!isEditing) onOpen();
+      }}
+      className={`px-3 sm:px-4 py-4 border-b border-[#E6D5B8] last:border-b-0 group ${
+        isEditing
+          ? ""
+          : "hover:bg-[#FFF8E7] transition-colors cursor-pointer"
+      }`}
+    >
       <div className="flex items-start gap-3 sm:gap-4">
         <div className="w-6 sm:w-8 pt-1 text-[#8B6F47] text-sm text-right relative">
           <span className={isEditing ? "" : "group-hover:invisible"}>
@@ -911,7 +990,11 @@ function SongRow({
         )}
 
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-[#3D2817] truncate">
+          <h3
+            className={`font-semibold text-[#3D2817] truncate ${
+              isEditing ? "" : "group-hover:underline"
+            }`}
+          >
             {entry.song.title}
           </h3>
           <p className="text-sm text-[#8B6F47] truncate">

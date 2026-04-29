@@ -4,15 +4,21 @@ import { useNavigate } from "react-router";
 import { useSpotify } from "../data/SpotifyContext";
 import { useAppUser } from "../data/AppUserContext";
 import { fetchUserPlaylists } from "../data/spotifyApi";
-import type { Playlist } from "../data/mockData";
+import type { Playlist } from "../data/types";
 import {
   listMyPlaylists,
   type AppPlaylistSummary,
 } from "../data/appPlaylistsApi";
 import { listSavedPlaylists } from "../data/savedPlaylistsApi";
+import {
+  listPendingInvites,
+  respondToInvite,
+  type PendingInvite,
+} from "../data/invitesApi";
+import { formatError } from "../data/formatError";
 import { VinylRecord } from "./VinylRecord";
 import { CreatePlaylistModal } from "./CreatePlaylistModal";
-import { Bookmark, LogOut, Music, Plus } from "lucide-react";
+import { Bookmark, Check, LogOut, Mail, Music, Plus, X } from "lucide-react";
 import { SpinDeckLogo } from "./SpinDeckLogo";
 
 export function HomePage() {
@@ -87,6 +93,69 @@ export function HomePage() {
     void loadSavedPlaylists();
   }, [loadSavedPlaylists]);
 
+  // --- Pending invites ----------------------------------------------------
+  // Inbox of playlist invites where the current user is the recipient. The
+  // list is small (one row per pending invite) so we just refetch on
+  // mount and after each accept/decline rather than wiring up a websocket.
+  const [invites, setInvites] = useState<PendingInvite[]>([]);
+  const [loadingInvites, setLoadingInvites] = useState<boolean>(Boolean(user?.id));
+  const [invitesError, setInvitesError] = useState<string | null>(null);
+  // Track which invite is currently being responded to so we can disable
+  // its buttons (and grey them out) without locking the rest of the inbox.
+  const [respondingInviteId, setRespondingInviteId] = useState<string | null>(
+    null
+  );
+
+  const loadInvites = useCallback(async () => {
+    if (!user?.id) return;
+    setLoadingInvites(true);
+    setInvitesError(null);
+    try {
+      const list = await listPendingInvites(user.id);
+      setInvites(list);
+    } catch (e) {
+      setInvitesError(formatError(e, "Couldn't load invites."));
+    } finally {
+      setLoadingInvites(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    void loadInvites();
+  }, [loadInvites]);
+
+  async function handleInviteResponse(
+    invite: PendingInvite,
+    action: "accept" | "decline"
+  ) {
+    if (!user?.id) return;
+    if (respondingInviteId) return; // one at a time
+    setRespondingInviteId(invite.id);
+    // Optimistically pop the row out — if the call fails we put it back.
+    const snapshot = invites;
+    setInvites((prev) => prev.filter((i) => i.id !== invite.id));
+    try {
+      await respondToInvite({
+        inviteId: invite.id,
+        recipientId: user.id,
+        playlistId: invite.playlistId,
+        action,
+      });
+      // Accept auto-saves the playlist; refresh Saved Playlists so the
+      // bookmark card appears below without a hard reload.
+      if (action === "accept") {
+        void loadSavedPlaylists();
+      }
+    } catch (e) {
+      setInvites(snapshot);
+      setInvitesError(
+        formatError(e, "Couldn't update invite. Please try again.")
+      );
+    } finally {
+      setRespondingInviteId(null);
+    }
+  }
+
   return (
     <div className="min-h-screen w-full bg-[#FFF8E7] pb-24">
       <header className="border-b-2 border-[#3D2817] bg-[#FFE8BA] sticky top-0 z-10">
@@ -131,7 +200,7 @@ export function HomePage() {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-8 py-6 sm:py-12 space-y-10 sm:space-y-16">
         {/* -------- Your SpinDeck Playlists (annotated, app-native) -------- */}
-        <section>
+        {isConnected && <section>
           <div className="flex items-end justify-between mb-6 sm:mb-8 flex-wrap gap-4">
             <div>
               <h2 className="text-2xl sm:text-3xl font-bold text-[#3D2817]">
@@ -202,6 +271,126 @@ export function HomePage() {
                 </div>
               ))}
             </div>
+          )}
+        </section>}
+
+        {/* -------- Invites (incoming, pending) -------- */}
+        {/* Top of the social stack. We always render the section header so
+            the empty state can teach the feature; once the user has
+            invites, each row gets Accept (auto-saves to library + drops
+            into Saved Playlists) or Decline. */}
+        <section>
+          <div className="mb-6 sm:mb-8">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[#3D2817] flex items-center gap-2">
+              <Mail className="size-6 sm:size-7" />
+              Invites
+              {invites.length > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center min-w-[1.5rem] h-6 px-2 rounded-full bg-[#FF9F45] text-[#3D2817] text-sm font-bold border-2 border-[#3D2817]">
+                  {invites.length}
+                </span>
+              )}
+            </h2>
+            <p className="text-sm text-[#8B6F47] mt-1">
+              Playlists other SpinDeck users have sent you. Accept to save
+              them straight to your library.
+            </p>
+          </div>
+
+          {loadingInvites ? (
+            <div className="text-center py-12 text-[#8B6F47]">
+              <p>Loading invites…</p>
+            </div>
+          ) : invitesError ? (
+            <div className="text-center py-12 text-red-600">
+              <p>{invitesError}</p>
+            </div>
+          ) : invites.length === 0 ? (
+            <div className="border-2 border-dashed border-[#8B6F47] rounded-lg p-8 sm:p-10 text-center bg-white/50">
+              <Mail className="size-6 mx-auto mb-2 text-[#8B6F47]" />
+              <p className="text-[#3D2817] font-semibold mb-1">
+                No invites right now
+              </p>
+              <p className="text-sm text-[#8B6F47]">
+                When another SpinDeck user invites you to a playlist, it'll
+                land here. Open any playlist and tap{" "}
+                <span className="font-semibold">Invite</span> to send one of
+                your own.
+              </p>
+            </div>
+          ) : (
+            <ul className="space-y-3 sm:space-y-4">
+              {invites.map((invite) => {
+                const responding = respondingInviteId === invite.id;
+                return (
+                  <li
+                    key={invite.id}
+                    className="border-2 border-[#3D2817] rounded-lg bg-white shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] p-4 sm:p-5 flex flex-col sm:flex-row gap-4 sm:gap-5 items-stretch sm:items-center"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigate(`/app-playlist/${invite.playlistId}`)
+                      }
+                      className="flex-shrink-0 self-center sm:self-auto"
+                      title={`Preview "${invite.playlistName}"`}
+                    >
+                      <VinylRecord
+                        color={invite.playlistVinylColor}
+                        className="size-24 sm:size-28 transition-transform hover:scale-105 hover:rotate-12"
+                      />
+                    </button>
+
+                    <div className="flex-1 min-w-0 text-center sm:text-left">
+                      <p className="text-xs text-[#8B6F47] mb-1">
+                        From{" "}
+                        <span className="font-semibold text-[#3D2817]">
+                          @{invite.senderUsername}
+                        </span>
+                        {invite.senderDisplayName
+                          ? ` (${invite.senderDisplayName})`
+                          : ""}
+                      </p>
+                      <h3 className="font-semibold text-base sm:text-lg text-[#3D2817] line-clamp-2">
+                        {invite.playlistName}
+                      </h3>
+                      <p className="text-xs sm:text-sm text-[#8B6F47] mb-2">
+                        {invite.playlistSongCount}{" "}
+                        {invite.playlistSongCount === 1 ? "song" : "songs"}
+                      </p>
+                      {invite.message && (
+                        <blockquote className="border-l-4 border-[#FF9F45] pl-3 py-1 text-sm text-[#3D2817] whitespace-pre-wrap bg-[#FFF8E7] rounded-r text-left">
+                          {invite.message}
+                        </blockquote>
+                      )}
+                    </div>
+
+                    <div className="flex flex-row sm:flex-col gap-2 sm:gap-2 justify-center sm:justify-start sm:self-center flex-shrink-0">
+                      <Button
+                        onClick={() =>
+                          void handleInviteResponse(invite, "accept")
+                        }
+                        disabled={responding}
+                        className="bg-[#FF9F45] hover:bg-[#FF8C2E] text-[#3D2817] font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
+                      >
+                        <Check className="size-4 mr-1" />
+                        {responding ? "…" : "Accept"}
+                      </Button>
+                      <Button
+                        onClick={() =>
+                          void handleInviteResponse(invite, "decline")
+                        }
+                        disabled={responding}
+                        variant="outline"
+                        className="bg-white hover:bg-[#FFE4E4] text-[#3D2817] font-semibold border-2 border-[#3D2817]"
+                      >
+                        <X className="size-4 mr-1" />
+                        Decline
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </section>
 

@@ -1,4 +1,4 @@
-import type { Song } from "./mockData";
+import type { Song } from "./types";
 import { supabase } from "./supabaseClient";
 
 // ---------------------------------------------------------------------------

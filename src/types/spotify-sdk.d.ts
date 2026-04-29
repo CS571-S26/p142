@@ -2,6 +2,11 @@ interface SpotifyPlayerState {
   paused: boolean;
   position: number;
   duration: number;
+  // Player-level state mirrored from Spotify (shuffle / repeat). The SDK
+  // emits these on every state change so we can keep our toggle button
+  // in sync with whatever the user does on another Spotify client.
+  shuffle: boolean;
+  repeat_mode: 0 | 1 | 2;
   track_window: {
     current_track: {
       id: string;

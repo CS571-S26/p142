@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useSpotify } from "./SpotifyContext";
-import { startPlayback } from "./spotifyApi";
+import { startPlayback, setShuffle as setShuffleApi } from "./spotifyApi";
 
 interface CurrentTrack {
   id: string;
@@ -23,6 +23,7 @@ interface PlayerContextType {
   currentTrack: CurrentTrack | null;
   position: number;
   duration: number;
+  isShuffled: boolean;
   play: (options: {
     uris?: string[];
     contextUri?: string;
@@ -32,6 +33,7 @@ interface PlayerContextType {
   skipNext: () => void;
   skipPrev: () => void;
   seek: (ms: number) => void;
+  toggleShuffle: () => Promise<void>;
 }
 
 const PlayerContext = createContext<PlayerContextType | null>(null);
@@ -45,6 +47,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [currentTrack, setCurrentTrack] = useState<CurrentTrack | null>(null);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  // Shuffle is a player-level state on Spotify's side: changing it on
+  // any client (web, mobile, desktop) is reflected here via
+  // player_state_changed. We mirror it locally so the toggle button can
+  // show the right state without a poll. toggleShuffle updates
+  // optimistically, then the next state-change event confirms it.
+  const [isShuffled, setIsShuffled] = useState(false);
   const positionTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -78,6 +86,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setIsPlaying(!state.paused);
         setPosition(state.position);
         setDuration(state.duration);
+        setIsShuffled(!!state.shuffle);
 
         const track = state.track_window.current_track;
         setCurrentTrack({
@@ -161,6 +170,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setPosition(ms);
   }, []);
 
+  // Optimistic flip + REST call. The Web Playback SDK doesn't expose a
+  // setShuffle method, so we go through Spotify's REST API; the next
+  // player_state_changed event will reconcile state if the call failed.
+  const toggleShuffle = useCallback(async () => {
+    if (!deviceId || !token) return;
+    const next = !isShuffled;
+    setIsShuffled(next);
+    try {
+      await setShuffleApi(token, deviceId, next);
+    } catch {
+      // Roll back on failure — the user sees the toggle snap back so
+      // they know the change didn't take.
+      setIsShuffled(!next);
+    }
+  }, [deviceId, token, isShuffled]);
+
   return (
     <PlayerContext.Provider
       value={{
@@ -169,11 +194,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         currentTrack,
         position,
         duration,
+        isShuffled,
         play,
         togglePlayPause,
         skipNext,
         skipPrev,
         seek,
+        toggleShuffle,
       }}
     >
       {children}
