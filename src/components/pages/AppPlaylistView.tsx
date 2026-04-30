@@ -98,6 +98,7 @@ export function AppPlaylistView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+
   const loadDetail = useCallback(async () => {
     if (!playlistId) return;
     setLoading(true);
@@ -951,6 +952,8 @@ function SongRow({
   // remounts with this initial value — no sync-effect required.
   const [draft, setDraft] = useState(entry.annotation ?? "");
   const [dirty, setDirty] = useState(false);
+  /** View mode only: collapse this row's note without affecting other songs. */
+  const [noteHidden, setNoteHidden] = useState(false);
 
   const isRemoving = saving === `remove:${entry.position}`;
   const isAnnotating = saving === `annotate:${entry.position}`;
@@ -1096,9 +1099,26 @@ function SongRow({
             </div>
           </div>
         ) : entry.annotation ? (
-          <blockquote className="border-l-4 border-[#FF9F45] pl-3 py-1 text-sm text-[#3D2817] whitespace-pre-wrap bg-[#FFF8E7] rounded-r">
-            {entry.annotation}
-          </blockquote>
+          <div>
+            <div className="flex justify-end mb-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNoteHidden((h) => !h);
+                }}
+                className="text-xs font-medium text-[#785A38] hover:text-[#3D2817] underline underline-offset-2"
+                aria-expanded={!noteHidden}
+              >
+                {noteHidden ? "Show note" : "Hide note"}
+              </button>
+            </div>
+            {!noteHidden && (
+              <blockquote className="border-l-4 border-[#FF9F45] pl-3 py-1 text-sm text-[#3D2817] whitespace-pre-wrap bg-[#FFF8E7] rounded-r">
+                {entry.annotation}
+              </blockquote>
+            )}
+          </div>
         ) : null}
       </div>
     </div>

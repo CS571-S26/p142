@@ -269,9 +269,7 @@ function SignUpForm({
       </div>
 
       <div className="space-y-1">
-        <FieldLabel htmlFor="signup-email">
-          Email <span className="text-[#785A38] font-normal">(for password recovery)</span>
-        </FieldLabel>
+        <FieldLabel htmlFor="signup-email">Email</FieldLabel>
         <input
           id="signup-email"
           type="email"
