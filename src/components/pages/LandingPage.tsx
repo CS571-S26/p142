@@ -40,6 +40,10 @@ export function LandingPage() {
     if (!user?.id) return;
     const intent = consumePostAuthRedirect();
     if (!intent) return;
+    // Intentional setState-in-effect: we need to swap into a "loading"
+    // splash before the async auto-save kicks off. The cascading render
+    // is exactly the desired behavior here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRedirecting(true);
 
     void (async () => {
@@ -63,7 +67,7 @@ export function LandingPage() {
   if (redirecting) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-[#FFF8E7]">
-        <p className="text-[#8B6F47]">
+        <p className="text-[#785A38]">
           Welcome — taking you back to the playlist…
         </p>
       </div>
@@ -87,11 +91,11 @@ export function LandingPage() {
 
         <div className="space-y-3">
           <h1 className="text-4xl sm:text-6xl font-bold text-[#3D2817]">Spin Deck</h1>
-          <p className="text-base sm:text-xl text-[#8B6F47]">
+          <p className="text-base sm:text-xl text-[#785A38]">
             Annotate and explore your music collection
           </p>
           {user && (
-            <p className="text-sm text-[#8B6F47]">
+            <p className="text-sm text-[#785A38]">
               Signed in as <span className="font-semibold">@{user.username}</span>
             </p>
           )}
@@ -128,7 +132,7 @@ export function LandingPage() {
           </Button>
         </div>
 
-        <p className="text-sm text-[#8B6F47]">
+        <p className="text-sm text-[#785A38]">
           Spotify is optional — it unlocks in-app playback and syncs your
           playlists. Notes and favorites work without it.
         </p>

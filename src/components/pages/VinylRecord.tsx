@@ -16,11 +16,18 @@ export function VinylRecord({ color, size = 200, className }: VinylRecordProps) 
   const sized = className ? {} : { width: size, height: size };
 
   return (
+    // Purely decorative — the playlist name (or whatever the vinyl is
+    // visualizing) is always rendered as text right next to the SVG, so
+    // exposing it to assistive tech would just make screen readers say
+    // "image" before every playlist card. aria-hidden + role="img"
+    // omitted means screen readers ignore it entirely.
     <svg
       {...sized}
       className={className}
       viewBox="0 0 200 200"
       fill="none"
+      aria-hidden="true"
+      focusable="false"
       xmlns="http://www.w3.org/2000/svg"
     >
       {/* Outer circle - vinyl */}

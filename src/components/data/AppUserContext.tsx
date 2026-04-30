@@ -362,6 +362,10 @@ export function AppUserProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// Co-located with the provider for ergonomics; HMR's "fast refresh"
+// dislikes mixing a hook + component in one module, but splitting these
+// across files is more pain than it's worth for a hand-rolled context.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAppUser() {
   const ctx = useContext(AppUserContext);
   if (!ctx) throw new Error("useAppUser must be used within AppUserProvider");

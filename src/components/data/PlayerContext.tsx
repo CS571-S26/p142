@@ -208,6 +208,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// Co-located hook (fast-refresh prefers separate files; not worth a
+// split for a single hook).
+// eslint-disable-next-line react-refresh/only-export-components
 export function usePlayer() {
   const ctx = useContext(PlayerContext);
   if (!ctx) throw new Error("usePlayer must be used within PlayerProvider");

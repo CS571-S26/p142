@@ -17,7 +17,7 @@ export function AuthPage() {
         <div className="flex flex-col items-center space-y-3 sm:space-y-4">
           <SpinDeckLogo size={104} />
           <h1 className="text-3xl sm:text-4xl font-bold text-[#3D2817]">Spin Deck</h1>
-          <p className="text-sm sm:text-base text-[#8B6F47] text-center">
+          <p className="text-sm sm:text-base text-[#785A38] text-center">
             Annotate and explore your music collection
           </p>
         </div>
@@ -39,10 +39,24 @@ export function AuthPage() {
 // -------------------------------------------------------------------
 
 const INPUT_CLASS =
-  "w-full px-4 py-3 rounded-lg bg-white border-2 border-[#3D2817] text-[#3D2817] placeholder-[#8B6F47] focus:outline-none focus:ring-2 focus:ring-[#FF9F45]";
+  "w-full px-4 py-3 rounded-lg bg-white border-2 border-[#3D2817] text-[#3D2817] placeholder-[#785A38] focus:outline-none focus:ring-2 focus:ring-[#FF9F45]";
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <label className="text-sm font-semibold text-[#3D2817]">{children}</label>;
+// Always associates a label with its control via htmlFor so screen
+// readers announce the field name when focus lands on the input — a
+// non-negotiable for WCAG-compliant forms. The `htmlFor` prop is
+// required so future fields don't accidentally drop the association.
+function FieldLabel({
+  htmlFor,
+  children,
+}: {
+  htmlFor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label htmlFor={htmlFor} className="text-sm font-semibold text-[#3D2817]">
+      {children}
+    </label>
+  );
 }
 
 function ErrorBanner({ message }: { message: string }) {
@@ -59,7 +73,7 @@ function ErrorBanner({ message }: { message: string }) {
 function ModeTabs({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
   const activeClass =
     "bg-[#FF9F45] text-[#3D2817] shadow-[2px_2px_0px_0px_rgba(61,40,23,1)]";
-  const inactiveClass = "bg-white text-[#8B6F47] hover:text-[#3D2817]";
+  const inactiveClass = "bg-white text-[#785A38] hover:text-[#3D2817]";
 
   return (
     <div className="flex gap-2 p-1 rounded-lg border-2 border-[#3D2817] bg-white">
@@ -113,8 +127,9 @@ function SignInForm({
   return (
     <form onSubmit={handle} className="space-y-4">
       <div className="space-y-1">
-        <FieldLabel>Username or email</FieldLabel>
+        <FieldLabel htmlFor="signin-identifier">Username or email</FieldLabel>
         <input
+          id="signin-identifier"
           type="text"
           value={identifier}
           onChange={(e) => setIdentifier(e.target.value)}
@@ -127,8 +142,9 @@ function SignInForm({
       </div>
 
       <div className="space-y-1">
-        <FieldLabel>Password</FieldLabel>
+        <FieldLabel htmlFor="signin-password">Password</FieldLabel>
         <input
+          id="signin-password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -148,7 +164,7 @@ function SignInForm({
         {submitting ? "Signing in…" : "Sign in"}
       </Button>
 
-      <p className="text-sm text-[#8B6F47] text-center pt-1">
+      <p className="text-sm text-[#785A38] text-center pt-1">
         Don't have an account?{" "}
         <button
           type="button"
@@ -201,8 +217,9 @@ function SignUpForm({
   return (
     <form onSubmit={handle} className="space-y-4">
       <div className="space-y-1">
-        <FieldLabel>Username</FieldLabel>
+        <FieldLabel htmlFor="signup-username">Username</FieldLabel>
         <input
+          id="signup-username"
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
@@ -211,18 +228,20 @@ function SignUpForm({
           spellCheck={false}
           maxLength={24}
           required
+          aria-describedby="signup-username-hint"
           className={INPUT_CLASS}
         />
-        <p className="text-xs text-[#8B6F47]">
+        <p id="signup-username-hint" className="text-xs text-[#785A38]">
           3–24 characters. Letters, numbers, and underscores only.
         </p>
       </div>
 
       <div className="space-y-1">
-        <FieldLabel>
-          Display name <span className="text-[#8B6F47] font-normal">(optional)</span>
+        <FieldLabel htmlFor="signup-display-name">
+          Display name <span className="text-[#785A38] font-normal">(optional)</span>
         </FieldLabel>
         <input
+          id="signup-display-name"
           type="text"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
@@ -234,24 +253,27 @@ function SignUpForm({
       </div>
 
       <div className="space-y-1">
-        <FieldLabel>Password</FieldLabel>
+        <FieldLabel htmlFor="signup-password">Password</FieldLabel>
         <input
+          id="signup-password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
           minLength={6}
           required
+          aria-describedby="signup-password-hint"
           className={INPUT_CLASS}
         />
-        <p className="text-xs text-[#8B6F47]">At least 6 characters.</p>
+        <p id="signup-password-hint" className="text-xs text-[#785A38]">At least 6 characters.</p>
       </div>
 
       <div className="space-y-1">
-        <FieldLabel>
-          Email <span className="text-[#8B6F47] font-normal">(for password recovery)</span>
+        <FieldLabel htmlFor="signup-email">
+          Email <span className="text-[#785A38] font-normal">(for password recovery)</span>
         </FieldLabel>
         <input
+          id="signup-email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -272,7 +294,7 @@ function SignUpForm({
         {submitting ? "Creating…" : "Create account"}
       </Button>
 
-      <p className="text-sm text-[#8B6F47] text-center pt-1">
+      <p className="text-sm text-[#785A38] text-center pt-1">
         Already have an account?{" "}
         <button
           type="button"

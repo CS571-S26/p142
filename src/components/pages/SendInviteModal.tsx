@@ -124,18 +124,25 @@ export function SendInviteModal({
     (!picked || picked.username.toLowerCase() !== query.trim().replace(/^@/, "").toLowerCase());
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8 bg-[#3D2817]/40 backdrop-blur-sm"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !submitting) onClose();
-      }}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Send invite"
-    >
+    // Backdrop is a real <button> so keyboard users have a "Close
+    // dialog" focus target, and the lint rules treating onClick-on-div
+    // as ambiguous don't fire. Dialog is a sibling — no bubbling.
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8">
+      <button
+        type="button"
+        onClick={() => {
+          if (!submitting) onClose();
+        }}
+        disabled={submitting}
+        aria-label="Close dialog"
+        className="absolute inset-0 bg-[#3D2817]/40 backdrop-blur-sm cursor-default focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45] focus-visible:ring-inset"
+      />
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-lg bg-[#FFF8E7] border-2 border-[#3D2817] rounded-lg shadow-[6px_6px_0px_0px_rgba(61,40,23,1)] overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Send invite"
+        className="relative w-full max-w-lg bg-[#FFF8E7] border-2 border-[#3D2817] rounded-lg shadow-[6px_6px_0px_0px_rgba(61,40,23,1)] overflow-hidden"
       >
         <div className="flex items-center justify-between px-5 py-3 bg-[#FFE8BA] border-b-2 border-[#3D2817]">
           <h2 className="text-lg font-bold text-[#3D2817]">Send invite</h2>
@@ -144,14 +151,14 @@ export function SendInviteModal({
             onClick={onClose}
             disabled={submitting}
             aria-label="Close"
-            className="text-[#8B6F47] hover:text-[#3D2817] disabled:opacity-50"
+            className="text-[#785A38] hover:text-[#3D2817] disabled:opacity-50"
           >
             <X className="size-5" />
           </button>
         </div>
 
         <div className="px-4 sm:px-5 py-4 sm:py-5 space-y-4 sm:space-y-5">
-          <p className="text-sm text-[#8B6F47]">
+          <p className="text-sm text-[#785A38]">
             Inviting{" "}
             <span className="font-semibold text-[#3D2817]">"{playlistName}"</span>
             . Recipient gets it in their Invites inbox; accepting adds it to
@@ -160,11 +167,15 @@ export function SendInviteModal({
 
           {/* ----- Username field ----- */}
           <div>
-            <label className="block text-sm font-semibold text-[#3D2817] mb-1">
+            <label
+              htmlFor="invite-username"
+              className="block text-sm font-semibold text-[#3D2817] mb-1"
+            >
               SpinDeck username
             </label>
             <div className="relative">
               <input
+                id="invite-username"
                 ref={usernameRef}
                 type="text"
                 value={query}
@@ -176,14 +187,14 @@ export function SendInviteModal({
                 spellCheck={false}
                 autoComplete="off"
                 maxLength={32}
-                className="w-full rounded-md border-2 border-[#3D2817] px-3 py-2 bg-white text-[#3D2817] placeholder:text-[#8B6F47] focus:outline-none focus:ring-2 focus:ring-[#FF9F45]"
+                className="w-full rounded-md border-2 border-[#3D2817] px-3 py-2 bg-white text-[#3D2817] placeholder:text-[#785A38] focus:outline-none focus:ring-2 focus:ring-[#FF9F45]"
               />
               {showResults && (
                 <div className="absolute left-0 right-0 top-full mt-1 border-2 border-[#3D2817] bg-white rounded-md shadow-[3px_3px_0px_0px_rgba(61,40,23,1)] z-10 max-h-60 overflow-y-auto">
                   {searching ? (
-                    <p className="px-3 py-2 text-sm text-[#8B6F47]">Searching…</p>
+                    <p className="px-3 py-2 text-sm text-[#785A38]">Searching…</p>
                   ) : results.length === 0 ? (
-                    <p className="px-3 py-2 text-sm text-[#8B6F47]">
+                    <p className="px-3 py-2 text-sm text-[#785A38]">
                       No matches. Double-check the spelling.
                     </p>
                   ) : (
@@ -203,7 +214,7 @@ export function SendInviteModal({
                               @{u.username}
                             </p>
                             {u.displayName && (
-                              <p className="text-xs text-[#8B6F47]">
+                              <p className="text-xs text-[#785A38]">
                                 {u.displayName}
                               </p>
                             )}
@@ -216,7 +227,7 @@ export function SendInviteModal({
               )}
             </div>
             {picked && (
-              <p className="mt-1 text-xs text-[#8B6F47]">
+              <p className="mt-1 text-xs text-[#785A38]">
                 Sending to{" "}
                 <span className="font-semibold text-[#3D2817]">
                   @{picked.username}
@@ -228,19 +239,27 @@ export function SendInviteModal({
 
           {/* ----- Optional message ----- */}
           <div>
-            <label className="block text-sm font-semibold text-[#3D2817] mb-1">
+            <label
+              htmlFor="invite-message"
+              className="block text-sm font-semibold text-[#3D2817] mb-1"
+            >
               Message{" "}
-              <span className="font-normal text-[#8B6F47]">(optional)</span>
+              <span className="font-normal text-[#785A38]">(optional)</span>
             </label>
             <Textarea
+              id="invite-message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               maxLength={280}
               rows={3}
               placeholder="Thought you'd dig this one…"
               className="bg-white"
+              aria-describedby="invite-message-counter"
             />
-            <p className="mt-1 text-xs text-[#8B6F47] text-right">
+            <p
+              id="invite-message-counter"
+              className="mt-1 text-xs text-[#785A38] text-right"
+            >
               {message.length} / 280
             </p>
           </div>

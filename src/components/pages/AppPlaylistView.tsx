@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft,
   Bookmark,
@@ -366,7 +366,7 @@ export function AppPlaylistView() {
   if (loading) {
     return (
       <div className="min-h-screen w-full bg-[#FFF8E7] flex items-center justify-center">
-        <p className="text-[#8B6F47]">Loading playlist…</p>
+        <p className="text-[#785A38]">Loading playlist…</p>
       </div>
     );
   }
@@ -378,7 +378,7 @@ export function AppPlaylistView() {
           <h1 className="text-2xl font-bold text-[#3D2817]">
             Couldn't load playlist
           </h1>
-          <p className="text-[#8B6F47]">{error}</p>
+          <p className="text-[#785A38]">{error}</p>
           <Button onClick={() => navigate("/home")} variant="outline">
             Back to Home
           </Button>
@@ -418,7 +418,7 @@ export function AppPlaylistView() {
             <Button
               variant="ghost"
               onClick={() => void signOut()}
-              className="text-[#8B6F47] hover:text-red-600"
+              className="text-[#785A38] hover:text-red-600"
             >
               <LogOut className="size-4 mr-2" />
               Log out
@@ -477,6 +477,7 @@ export function AppPlaylistView() {
                   onBlur={saveMeta}
                   maxLength={80}
                   placeholder="Playlist name"
+                  aria-label="Playlist name"
                   className="w-full text-2xl sm:text-4xl font-bold text-[#3D2817] bg-transparent border-b-2 border-[#3D2817]/30 focus:border-[#3D2817] outline-none mb-3 px-0 py-1"
                 />
                 <Textarea
@@ -486,10 +487,11 @@ export function AppPlaylistView() {
                   rows={2}
                   maxLength={500}
                   placeholder="Describe your playlist…"
+                  aria-label="Playlist description"
                   className="bg-white mb-3"
                 />
                 {savingMeta && (
-                  <p className="text-xs text-[#8B6F47]">Saving…</p>
+                  <p className="text-xs text-[#785A38]">Saving…</p>
                 )}
               </>
             ) : (
@@ -498,21 +500,24 @@ export function AppPlaylistView() {
                   {detail.name}
                 </h1>
                 {detail.description && (
-                  <p className="text-sm sm:text-base text-[#8B6F47] mb-3 whitespace-pre-wrap">
+                  <p className="text-sm sm:text-base text-[#785A38] mb-3 whitespace-pre-wrap">
                     {detail.description}
                   </p>
                 )}
               </>
             )}
 
-            <p className="text-sm text-[#8B6F47] mb-4">
+            <p className="text-sm text-[#785A38] mb-4">
               {detail.songCount} {detail.songCount === 1 ? "song" : "songs"}
               {detail.ownerUsername && (
                 <span className="ml-2">
                   • by{" "}
-                  <span className="font-semibold">
+                  <Link
+                    to={`/u/${detail.ownerUsername}`}
+                    className="font-semibold text-[#3D2817] hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45]"
+                  >
                     @{detail.ownerUsername}
-                  </span>
+                  </Link>
                 </span>
               )}
             </p>
@@ -664,7 +669,7 @@ export function AppPlaylistView() {
                     <p className="font-semibold text-[#3D2817] mb-1">
                       Connect Spotify to add songs
                     </p>
-                    <p className="text-sm text-[#8B6F47] mb-3">
+                    <p className="text-sm text-[#785A38] mb-3">
                       We use your Spotify account to look up tracks. Once a
                       song's been added, anyone can view and read your
                       annotations — no Spotify required on their end.
@@ -681,18 +686,19 @@ export function AppPlaylistView() {
               ) : (
               <>
               <div className="flex items-center gap-2 border-2 border-[#3D2817] rounded-md px-3 py-2 bg-[#FFF8E7] focus-within:bg-white">
-                <Search className="size-4 text-[#8B6F47]" />
+                <Search className="size-4 text-[#785A38]" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search songs by title, artist, album…"
-                  className="flex-1 bg-transparent outline-none text-[#3D2817] placeholder:text-[#8B6F47]"
+                  aria-label="Search songs by title, artist, album"
+                  className="flex-1 bg-transparent outline-none text-[#3D2817] placeholder:text-[#785A38]"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery("")}
-                    className="text-[#8B6F47] hover:text-[#3D2817]"
+                    className="text-[#785A38] hover:text-[#3D2817]"
                     aria-label="Clear search"
                   >
                     <X className="size-4" />
@@ -708,13 +714,13 @@ export function AppPlaylistView() {
 
               <div className="mt-3">
                 {searching ? (
-                  <p className="text-sm text-[#8B6F47] px-1 py-2">Searching…</p>
+                  <p className="text-sm text-[#785A38] px-1 py-2">Searching…</p>
                 ) : searchQuery.trim() === "" ? (
-                  <p className="text-sm text-[#8B6F47] px-1 py-2">
+                  <p className="text-sm text-[#785A38] px-1 py-2">
                     Start typing to find tracks to add.
                   </p>
                 ) : searchResults.length === 0 ? (
-                  <p className="text-sm text-[#8B6F47] px-1 py-2">
+                  <p className="text-sm text-[#785A38] px-1 py-2">
                     No results for "{searchQuery}".
                   </p>
                 ) : (
@@ -740,7 +746,7 @@ export function AppPlaylistView() {
                             <p className="font-semibold text-[#3D2817] truncate">
                               {song.title}
                             </p>
-                            <p className="text-sm text-[#8B6F47] truncate">
+                            <p className="text-sm text-[#785A38] truncate">
                               {song.artist}
                             </p>
                           </div>
@@ -754,7 +760,7 @@ export function AppPlaylistView() {
                             }
                             className={
                               already
-                                ? "bg-[#E6D5B8] text-[#8B6F47] border-2 border-[#B8A080] cursor-not-allowed"
+                                ? "bg-[#E6D5B8] text-[#785A38] border-2 border-[#B8A080] cursor-not-allowed"
                                 : "bg-[#FF9F45] hover:bg-[#FF8C2E] text-[#3D2817] font-semibold border-2 border-[#3D2817]"
                             }
                           >
@@ -789,14 +795,14 @@ export function AppPlaylistView() {
           <div className="px-4 py-2 text-sm text-[#3D2817] font-medium bg-[#FFE8BA] border-b-2 border-[#3D2817] flex items-center justify-between">
             <span>Songs</span>
             {!isEditing && isOwner && (
-              <span className="text-xs text-[#8B6F47]">
+              <span className="text-xs text-[#785A38]">
                 Click Edit to add annotations
               </span>
             )}
           </div>
 
           {songs.length === 0 ? (
-            <div className="px-4 py-12 text-center text-[#8B6F47]">
+            <div className="px-4 py-12 text-center text-[#785A38]">
               {isEditing ? (
                 <p>Search above to add your first track.</p>
               ) : isOwner ? (
@@ -950,18 +956,31 @@ function SongRow({
   const isAnnotating = saving === `annotate:${entry.position}`;
 
   return (
+    // The row contains nested interactive controls (Play and Remove
+    // buttons in edit mode), so it can't be a real <button>. role +
+    // tabIndex + onKeyDown make it keyboard-operable in view mode while
+    // staying out of the way in edit mode (where the row IS the editor).
     <div
+      role={isEditing ? undefined : "button"}
+      tabIndex={isEditing ? undefined : 0}
       onClick={() => {
         if (!isEditing) onOpen();
+      }}
+      onKeyDown={(e) => {
+        if (isEditing) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
       }}
       className={`px-3 sm:px-4 py-4 border-b border-[#E6D5B8] last:border-b-0 group ${
         isEditing
           ? ""
-          : "hover:bg-[#FFF8E7] transition-colors cursor-pointer"
+          : "hover:bg-[#FFF8E7] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45] focus-visible:ring-inset"
       }`}
     >
       <div className="flex items-start gap-3 sm:gap-4">
-        <div className="w-6 sm:w-8 pt-1 text-[#8B6F47] text-sm text-right relative">
+        <div className="w-6 sm:w-8 pt-1 text-[#785A38] text-sm text-right relative">
           <span className={isEditing ? "" : "group-hover:invisible"}>
             {index + 1}
           </span>
@@ -990,19 +1009,23 @@ function SongRow({
         )}
 
         <div className="flex-1 min-w-0">
-          <h3
+          {/* Track titles inside a song list aren't section headings —
+              they're list items. Using a <p> keeps the page heading
+              hierarchy clean (h1 only) and avoids screen-reader users
+              hearing each row announced as a heading. */}
+          <p
             className={`font-semibold text-[#3D2817] truncate ${
               isEditing ? "" : "group-hover:underline"
             }`}
           >
             {entry.song.title}
-          </h3>
-          <p className="text-sm text-[#8B6F47] truncate">
+          </p>
+          <p className="text-sm text-[#785A38] truncate">
             {entry.song.artist}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-4 text-sm text-[#8B6F47] pt-1">
+        <div className="flex items-center gap-2 sm:gap-4 text-sm text-[#785A38] pt-1">
           {/* Duration is nice-to-have, not load-bearing — drop it on
               tiny screens so the title and remove button get more room. */}
           {entry.song.duration && (
@@ -1042,6 +1065,7 @@ function SongRow({
               maxLength={2000}
               rows={2}
               placeholder="Why this song? (optional)"
+              aria-label={`Annotation for ${entry.song.title}`}
               className="bg-[#FFF8E7]"
             />
             <div className="flex items-center gap-2">
@@ -1064,7 +1088,7 @@ function SongRow({
                     setDraft(entry.annotation ?? "");
                     setDirty(false);
                   }}
-                  className="text-xs text-[#8B6F47] hover:text-[#3D2817] underline"
+                  className="text-xs text-[#785A38] hover:text-[#3D2817] underline"
                 >
                   Cancel
                 </button>

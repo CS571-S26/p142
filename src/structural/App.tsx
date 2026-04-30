@@ -11,6 +11,8 @@ import { PlaylistView } from "../components/pages/PlaylistView";
 import { AppPlaylistView } from "../components/pages/AppPlaylistView";
 import { AppSongView } from "../components/pages/AppSongView";
 import { SongView } from "../components/pages/SongView";
+import { ProfileView } from "../components/pages/ProfileView";
+import { InvitesPage } from "../components/pages/InvitesPage";
 import { NowPlayingBar } from "../components/pages/NowPlayingBar";
 
 // ---------------------------------------------------------------------------
@@ -23,7 +25,7 @@ import { NowPlayingBar } from "../components/pages/NowPlayingBar";
 function Splash() {
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-[#FFF8E7]">
-      <p className="text-[#8B6F47]">Loading…</p>
+      <p className="text-[#785A38]">Loading…</p>
     </div>
   );
 }
@@ -53,6 +55,31 @@ const router = createHashRouter([
   // Per-song view for SpinDeck-built playlists. Also public so shared
   // links to a single song work for anonymous viewers.
   { path: "/app-playlist/:playlistId/song/:songId", Component: AppSongView },
+  // Profile pages. /profile is the signed-in user's own (editable);
+  // /u/:username is anyone's (view-only). Both share one ProfileView
+  // component, branched by the `ownProfile` prop. /u/:username is
+  // public — anonymous viewers can hit it from a shared playlist's
+  // "by @username" link.
+  {
+    path: "/profile",
+    element: (
+      <RequireAuth>
+        <ProfileView ownProfile />
+      </RequireAuth>
+    ),
+  },
+  { path: "/u/:username", Component: ProfileView },
+  // Dedicated invites inbox. The mail-icon button in the home header
+  // links here; the page renders the same Accept / Decline rows that
+  // used to live as a section on /home.
+  {
+    path: "/invites",
+    element: (
+      <RequireAuth>
+        <InvitesPage />
+      </RequireAuth>
+    ),
+  },
 ]);
 
 // ---------------------------------------------------------------------------
@@ -73,7 +100,7 @@ function AppGate() {
       <div className="min-h-screen w-full flex items-center justify-center bg-[#FFF8E7] p-8">
         <div className="max-w-md text-center space-y-3">
           <h1 className="text-2xl font-bold text-[#3D2817]">Couldn't start SpinDeck</h1>
-          <p className="text-[#8B6F47]">{error ?? "Unknown error."}</p>
+          <p className="text-[#785A38]">{error ?? "Unknown error."}</p>
         </div>
       </div>
     );

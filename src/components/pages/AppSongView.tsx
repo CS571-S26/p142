@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import {
   ArrowLeft,
   LogOut,
@@ -116,7 +116,7 @@ export function AppSongView() {
   if (loading) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-[#FFF8E7]">
-        <p className="text-[#8B6F47]">Loading song…</p>
+        <p className="text-[#785A38]">Loading song…</p>
       </div>
     );
   }
@@ -126,7 +126,7 @@ export function AppSongView() {
       <div className="min-h-screen w-full flex items-center justify-center bg-[#FFF8E7] p-8">
         <div className="max-w-md text-center space-y-3">
           <h1 className="text-2xl font-bold text-[#3D2817]">Couldn't load song</h1>
-          <p className="text-[#8B6F47]">{error ?? "Unknown error."}</p>
+          <p className="text-[#785A38]">{error ?? "Unknown error."}</p>
           <Button onClick={() => navigate("/home")} variant="outline">
             Back to Home
           </Button>
@@ -142,7 +142,7 @@ export function AppSongView() {
       <div className="min-h-screen w-full flex items-center justify-center bg-[#FFF8E7] p-8">
         <div className="max-w-md text-center space-y-3">
           <h1 className="text-2xl font-bold text-[#3D2817]">Track not found</h1>
-          <p className="text-[#8B6F47]">
+          <p className="text-[#785A38]">
             This song isn't in the playlist anymore.
           </p>
           <Button
@@ -175,7 +175,7 @@ export function AppSongView() {
             <Button
               variant="ghost"
               onClick={() => void signOut()}
-              className="text-[#8B6F47] hover:text-red-600"
+              className="text-[#785A38] hover:text-red-600"
             >
               <LogOut className="size-4 mr-2" />
               Log out
@@ -201,11 +201,11 @@ export function AppSongView() {
           <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3 text-[#3D2817] break-words">
             {song.title}
           </h1>
-          <p className="text-base sm:text-xl text-[#8B6F47] mb-1">{song.artist}</p>
+          <p className="text-base sm:text-xl text-[#785A38] mb-1">{song.artist}</p>
           {song.album && (
-            <p className="text-sm sm:text-base text-[#8B6F47]">{song.album}</p>
+            <p className="text-sm sm:text-base text-[#785A38]">{song.album}</p>
           )}
-          <div className="mt-3 sm:mt-4 flex items-center gap-4 sm:gap-6 text-sm text-[#8B6F47]">
+          <div className="mt-3 sm:mt-4 flex items-center gap-4 sm:gap-6 text-sm text-[#785A38]">
             {song.duration && <span>{song.duration}</span>}
             {/* Play requires Spotify; viewers without it see no play button
                 (same gate as the playlist's Play All). */}
@@ -237,11 +237,14 @@ export function AppSongView() {
             <h2 className="text-xl sm:text-2xl font-bold text-[#3D2817]">
               Description
               {detail.ownerUsername && (
-                <span className="ml-2 text-sm font-normal text-[#8B6F47]">
+                <span className="ml-2 text-sm font-normal text-[#785A38]">
                   by{" "}
-                  <span className="font-semibold text-[#3D2817]">
+                  <Link
+                    to={`/u/${detail.ownerUsername}`}
+                    className="font-semibold text-[#3D2817] hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45]"
+                  >
                     @{detail.ownerUsername}
-                  </span>
+                  </Link>
                 </span>
               )}
             </h2>
@@ -264,6 +267,7 @@ export function AppSongView() {
                 rows={5}
                 maxLength={2000}
                 placeholder="Why this song? Liner-notes style — what's the story?"
+                aria-label="Track description"
                 className="bg-[#FFF8E7]"
               />
               {saveError && (
@@ -301,7 +305,7 @@ export function AppSongView() {
               {entry.annotation}
             </blockquote>
           ) : (
-            <div className="border-2 border-dashed border-[#8B6F47] rounded-lg p-6 sm:p-8 text-center text-[#8B6F47] bg-white/50">
+            <div className="border-2 border-dashed border-[#785A38] rounded-lg p-6 sm:p-8 text-center text-[#785A38] bg-white/50">
               {isOwner ? (
                 <p>
                   No description yet. Tell viewers why this track earned its

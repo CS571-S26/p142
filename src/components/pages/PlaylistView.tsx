@@ -261,7 +261,7 @@ export function PlaylistView() {
             onClick={() => {
               void signOut();
             }}
-            className="text-[#8B6F47] hover:text-red-600"
+            className="text-[#785A38] hover:text-red-600"
           >
             <LogOut className="size-4 mr-2" />
             Log out
@@ -281,7 +281,7 @@ export function PlaylistView() {
             <h1 className="text-2xl sm:text-4xl font-bold mb-2 text-[#3D2817] break-words">
               {playlistName}
             </h1>
-            <p className="text-sm text-[#8B6F47] mb-4">
+            <p className="text-sm text-[#785A38] mb-4">
               {songCount} songs
               {detail?.ownerName && (
                 <span className="ml-2">• by {detail.ownerName}</span>
@@ -312,7 +312,7 @@ export function PlaylistView() {
                     className={
                       canEdit
                         ? undefined
-                        : "!bg-[#E6D5B8] !text-[#8B6F47] !border-[#B8A080] hover:!bg-[#E6D5B8] !shadow-none hover:!shadow-none opacity-80"
+                        : "!bg-[#E6D5B8] !text-[#785A38] !border-[#B8A080] hover:!bg-[#E6D5B8] !shadow-none hover:!shadow-none opacity-80"
                     }
                   >
                     <Pencil className="size-4 mr-2" />
@@ -386,18 +386,19 @@ export function PlaylistView() {
             </div>
             <div className="p-3 sm:p-4">
               <div className="flex items-center gap-2 border-2 border-[#3D2817] rounded-md px-3 py-2 bg-[#FFF8E7] focus-within:bg-white">
-                <Search className="size-4 text-[#8B6F47]" />
+                <Search className="size-4 text-[#785A38]" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search Spotify for songs to add..."
-                  className="flex-1 bg-transparent outline-none text-[#3D2817] placeholder:text-[#8B6F47]"
+                  aria-label="Search Spotify for songs to add"
+                  className="flex-1 bg-transparent outline-none text-[#3D2817] placeholder:text-[#785A38]"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery("")}
-                    className="text-[#8B6F47] hover:text-[#3D2817]"
+                    className="text-[#785A38] hover:text-[#3D2817]"
                     aria-label="Clear search"
                   >
                     <X className="size-4" />
@@ -413,13 +414,13 @@ export function PlaylistView() {
 
               <div className="mt-3">
                 {searching ? (
-                  <p className="text-sm text-[#8B6F47] px-1 py-2">Searching…</p>
+                  <p className="text-sm text-[#785A38] px-1 py-2">Searching…</p>
                 ) : searchQuery.trim() === "" ? (
-                  <p className="text-sm text-[#8B6F47] px-1 py-2">
+                  <p className="text-sm text-[#785A38] px-1 py-2">
                     Start typing to find tracks.
                   </p>
                 ) : searchResults.length === 0 ? (
-                  <p className="text-sm text-[#8B6F47] px-1 py-2">
+                  <p className="text-sm text-[#785A38] px-1 py-2">
                     No results for “{searchQuery}”.
                   </p>
                 ) : (
@@ -445,7 +446,7 @@ export function PlaylistView() {
                             <p className="font-semibold text-[#3D2817] truncate">
                               {song.title}
                             </p>
-                            <p className="text-sm text-[#8B6F47] truncate">
+                            <p className="text-sm text-[#785A38] truncate">
                               {song.artist}
                             </p>
                           </div>
@@ -457,7 +458,7 @@ export function PlaylistView() {
                             }
                             className={`flex-shrink-0 ${
                               already
-                                ? "bg-[#E6D5B8] text-[#8B6F47] border-2 border-[#B8A080] cursor-not-allowed"
+                                ? "bg-[#E6D5B8] text-[#785A38] border-2 border-[#B8A080] cursor-not-allowed"
                                 : "bg-[#FF9F45] hover:bg-[#FF8C2E] text-[#3D2817] font-semibold border-2 border-[#3D2817]"
                             }`}
                           >
@@ -491,44 +492,59 @@ export function PlaylistView() {
           </div>
 
           {loading ? (
-            <div className="px-4 py-12 text-center text-[#8B6F47]">
+            <div className="px-4 py-12 text-center text-[#785A38]">
               <p>Loading tracks...</p>
             </div>
           ) : error ? (
-            <div className="px-4 py-12 text-center text-[#8B6F47]">
+            <div className="px-4 py-12 text-center text-[#785A38]">
               <p className="font-semibold mb-2 text-[#3D2817]">
                 {error.includes("403")
                   ? "This playlist is restricted"
                   : "Something went wrong"}
               </p>
-              <p className="text-sm text-[#8B6F47]">
+              <p className="text-sm text-[#785A38]">
                 {error.includes("403")
                   ? "Spotify blocks API access to algorithmic and editorial playlists (Discover Weekly, Daily Mix, etc.). Try one of your own playlists."
                   : error}
               </p>
             </div>
           ) : songs.length === 0 ? (
-            <div className="px-4 py-12 text-center text-[#8B6F47]">
+            <div className="px-4 py-12 text-center text-[#785A38]">
               <p>No songs in this playlist yet</p>
             </div>
           ) : (
             songs.map((song, index) => {
               const removing = savingAction === `remove:${song.id}`;
               return (
+                // The row contains nested interactive controls (Play and
+                // Remove buttons), so it can't be a real <button> — that
+                // would be invalid HTML and break click forwarding. We
+                // tag it with role/tabIndex/onKeyDown so keyboard users
+                // can Tab to the row and press Enter or Space to open
+                // the song detail page, matching the click behavior.
                 <div
                   key={`${song.id}-${index}`}
-                  onClick={() =>
-                    !isEditing &&
-                    navigate(`/playlist/${playlistId}/song/${song.id}`)
-                  }
+                  role={isEditing ? undefined : "button"}
+                  tabIndex={isEditing ? undefined : 0}
+                  onClick={() => {
+                    if (isEditing) return;
+                    navigate(`/playlist/${playlistId}/song/${song.id}`);
+                  }}
+                  onKeyDown={(e) => {
+                    if (isEditing) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate(`/playlist/${playlistId}/song/${song.id}`);
+                    }
+                  }}
                   className={`px-3 sm:px-4 py-3 sm:py-4 border-b border-[#E6D5B8] last:border-b-0 group ${
                     isEditing
                       ? ""
-                      : "hover:bg-[#FFF8E7] transition-colors cursor-pointer"
+                      : "hover:bg-[#FFF8E7] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45] focus-visible:ring-inset"
                   }`}
                 >
                   <div className="flex items-center gap-3 sm:gap-4">
-                    <div className="w-6 sm:w-8 text-[#8B6F47] text-sm text-right relative flex-shrink-0">
+                    <div className="w-6 sm:w-8 text-[#785A38] text-sm text-right relative flex-shrink-0">
                       <span
                         className={isEditing ? "" : "group-hover:invisible"}
                       >
@@ -564,16 +580,22 @@ export function PlaylistView() {
                       <div className="size-12 rounded border border-[#3D2817] bg-[#FFE8BA] flex-shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
-                      <h3
+                      {/* Track titles inside a song list aren't section
+                          headings — they're list items. Using a <p> here
+                          keeps the page heading hierarchy clean (h1 → h2
+                          only) and avoids skipping levels. The visual
+                          weight comes from font-semibold, not from the
+                          tag. */}
+                      <p
                         className={`font-semibold text-[#3D2817] truncate ${
                           isEditing ? "" : "group-hover:underline"
                         }`}
                       >
                         {song.title}
-                      </h3>
-                      <p className="text-sm text-[#8B6F47] truncate">{song.artist}</p>
+                      </p>
+                      <p className="text-sm text-[#785A38] truncate">{song.artist}</p>
                     </div>
-                    <div className="flex items-center gap-2 sm:gap-4 text-sm text-[#8B6F47] flex-shrink-0">
+                    <div className="flex items-center gap-2 sm:gap-4 text-sm text-[#785A38] flex-shrink-0">
                       {/* Duration is nice-to-have, not essential — hide on
                           phones where the row is tight. */}
                       <div className="hidden sm:block tabular-nums">{song.duration}</div>

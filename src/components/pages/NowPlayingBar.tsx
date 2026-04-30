@@ -27,17 +27,44 @@ export function NowPlayingBar() {
 
   const progress = duration > 0 ? (position / duration) * 100 : 0;
 
-  function handleProgressClick(e: React.MouseEvent<HTMLDivElement>) {
+  function handleProgressClick(e: React.MouseEvent<HTMLElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     seek(Math.floor(ratio * duration));
   }
 
+  // Keyboard seek: ←/→ scrub by 5s, Home/End jump to start/end. Matches
+  // the keyboard contract for `role="slider"` so screen readers know
+  // how to drive it. The visual remains the same thin orange progress
+  // bar; we just wrap it in a real interactive element so keyboard
+  // users can move it too.
+  function handleProgressKey(e: React.KeyboardEvent<HTMLElement>) {
+    if (!duration) return;
+    const STEP = 5000;
+    let next: number | null = null;
+    if (e.key === "ArrowRight") next = Math.min(position + STEP, duration);
+    else if (e.key === "ArrowLeft") next = Math.max(position - STEP, 0);
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = duration;
+    if (next !== null) {
+      e.preventDefault();
+      seek(next);
+    }
+  }
+
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#3D2817] text-white border-t-2 border-[#2A1B10] shadow-2xl">
       <div
-        className="h-1 bg-[#2A1B10] cursor-pointer group"
+        role="slider"
+        tabIndex={0}
+        aria-label="Seek track"
+        aria-valuemin={0}
+        aria-valuemax={duration || 0}
+        aria-valuenow={position}
+        aria-valuetext={`${formatTime(position)} of ${formatTime(duration)}`}
         onClick={handleProgressClick}
+        onKeyDown={handleProgressKey}
+        className="h-1 bg-[#2A1B10] cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45] focus-visible:ring-inset"
       >
         <div
           className="h-full bg-[#FF9F45] group-hover:bg-[#FFD699] transition-colors"
@@ -50,7 +77,7 @@ export function NowPlayingBar() {
           <img
             src={currentTrack.albumArt}
             alt={currentTrack.name}
-            className="w-10 h-10 sm:w-12 sm:h-12 rounded border-2 border-[#8B6F47] object-cover flex-shrink-0"
+            className="w-10 h-10 sm:w-12 sm:h-12 rounded border-2 border-[#785A38] object-cover flex-shrink-0"
           />
         )}
 
@@ -73,8 +100,8 @@ export function NowPlayingBar() {
             title={isShuffled ? "Shuffle is on" : "Shuffle is off"}
             className={`relative p-1.5 rounded-full transition-colors flex items-center justify-center ${
               isShuffled
-                ? "text-[#FF9F45] hover:bg-[#8B6F47]"
-                : "text-white hover:bg-[#8B6F47]"
+                ? "text-[#FF9F45] hover:bg-[#785A38]"
+                : "text-white hover:bg-[#785A38]"
             }`}
           >
             <Shuffle className="size-4" />
@@ -87,7 +114,7 @@ export function NowPlayingBar() {
           </button>
           <button
             onClick={skipPrev}
-            className="p-1.5 hover:bg-[#8B6F47] rounded-full transition-colors"
+            className="p-1.5 hover:bg-[#785A38] rounded-full transition-colors"
             aria-label="Previous"
           >
             <SkipBack className="size-4" />
@@ -105,7 +132,7 @@ export function NowPlayingBar() {
           </button>
           <button
             onClick={skipNext}
-            className="p-1.5 hover:bg-[#8B6F47] rounded-full transition-colors"
+            className="p-1.5 hover:bg-[#785A38] rounded-full transition-colors"
             aria-label="Next"
           >
             <SkipForward className="size-4" />
