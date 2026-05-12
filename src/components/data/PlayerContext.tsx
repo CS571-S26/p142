@@ -17,6 +17,34 @@ interface CurrentTrack {
   albumArt: string;
 }
 
+// Identifies which playlist (if any) is the source of the audio
+// currently playing. Set when a page calls `play()` with a `playlistId`
+// option. Used by HomePage and the playlist views so they can spin the
+// vinyl that represents the active playlist. Null until the user has
+// played anything in the session.
+export interface PlayingPlaylist {
+  /** "spotify" for tracks served via spotify:playlist:{id} contextUri,
+   * "app" for tracks queued from a SpinDeck-native annotated playlist. */
+  kind: "spotify" | "app";
+  id: string;
+}
+
+// A favorite-part "highlight" attached to whatever's currently playing.
+// PlayerContext doesn't fetch this itself — it's a pull-up state that
+// pages set. The model: SongView / AppSongView / AppPlaylistView know
+// which favorite-part data applies to the track they're showing, and
+// when that track is also the one playing, they push it here so
+// NowPlayingBar can render the band globally. Auto-clears when the
+// currently-playing track id changes (so a stale page-set part never
+// leaks onto the next song).
+export interface FavoritePartHighlight {
+  startMs: number;
+  endMs: number;
+  /** The track id this highlight belongs to. We compare against
+   * currentTrack.id to decide if it's still relevant. */
+  trackId: string;
+}
+
 interface PlayerContextType {
   isReady: boolean;
   isPlaying: boolean;
@@ -24,16 +52,41 @@ interface PlayerContextType {
   position: number;
   duration: number;
   isShuffled: boolean;
+  /** Favorite-part band/chip data for the currently-playing track, if a
+   * page has pushed one in. Cleared automatically when the track id
+   * changes; the page that set it remains the source of truth. */
+  currentFavoritePart: FavoritePartHighlight | null;
+  /** The playlist sourcing the current audio. Set when `play()` is
+   * called with a `playlistId`. Persists across pause/skip — pages
+   * combine it with `isPlaying` to decide whether to spin a vinyl. */
+  currentPlaylistId: PlayingPlaylist | null;
   play: (options: {
     uris?: string[];
     contextUri?: string;
     offsetIndex?: number;
+    /** Start at a specific track URI inside the context (or uris list).
+     * Used by SongView / AppSongView so a "play this track" button
+     * actually starts the surrounding playlist context — that way
+     * skip-next / skip-prev / on-end-advance behave like a real
+     * playlist instead of stopping after one song. */
+    offsetUri?: string;
+    /** Which playlist this play() call is sourcing audio from. Stored
+     * on `currentPlaylistId` so HomePage / PlaylistView / AppPlaylistView
+     * can spin the right vinyl. Pure metadata — does not affect what
+     * the Spotify SDK actually plays. */
+    playlistId?: PlayingPlaylist;
   }) => Promise<void>;
   togglePlayPause: () => void;
   skipNext: () => void;
   skipPrev: () => void;
   seek: (ms: number) => void;
   toggleShuffle: () => Promise<void>;
+  /** Push (or clear) the highlight for the currently-playing track.
+   * Pass null to clear. The setter is a no-op if the track id on the
+   * highlight doesn't match the track that's actually playing — this
+   * way a slow Supabase round-trip can't apply a band to the *next*
+   * song after a skip. */
+  setCurrentFavoritePart: (value: FavoritePartHighlight | null) => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | null>(null);
@@ -53,6 +106,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // show the right state without a poll. toggleShuffle updates
   // optimistically, then the next state-change event confirms it.
   const [isShuffled, setIsShuffled] = useState(false);
+  // Page-pushed favorite-part highlight for whatever is currently
+  // playing. See FavoritePartHighlight comment above. Cleared whenever
+  // currentTrack.id transitions to a new value so a stale band never
+  // bleeds onto a different song.
+  const [currentFavoritePart, setCurrentFavoritePartState] =
+    useState<FavoritePartHighlight | null>(null);
+  // Last playlist that audio was sourced from. Updated inside play()
+  // on every successful call; never auto-cleared (a paused playlist
+  // is still "the active playlist" until the user kicks off another
+  // one). Pages combine it with isPlaying to gate the spin animation.
+  const [currentPlaylistId, setCurrentPlaylistId] =
+    useState<PlayingPlaylist | null>(null);
   const positionTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -141,14 +206,59 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
   }, [isPlaying, duration]);
 
+  // Drop the favorite-part highlight whenever the track id changes.
+  // This is genuinely a "synchronize derived state with an external
+  // system" case: currentTrack flips asynchronously inside the Web
+  // Playback SDK's player_state_changed callback, and we have to
+  // react to that change here. The setter below also ignores stale
+  // pushes — this effect handles the "user skipped past the song that
+  // had a band, and no page is around to push a new one" path.
+  useEffect(() => {
+    setCurrentFavoritePartState((prev) => {
+      if (!prev) return prev;
+      if (!currentTrack || prev.trackId !== currentTrack.id) return null;
+      return prev;
+    });
+    // currentTrack reference identity isn't stable; we only care about
+    // the id transition here. The closure reads currentTrack, but the
+    // dep we want to react to is the id, not the object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrack?.id]);
+
+  // Public setter. Clears unconditionally when passed null. When passed
+  // a value, the trackId on the value MUST match what's currently
+  // playing — otherwise the push is dropped on the floor. That guards
+  // against a slow async fetch resolving after the user has skipped to
+  // the next track and accidentally drawing a band on the wrong song.
+  const setCurrentFavoritePart = useCallback(
+    (value: FavoritePartHighlight | null) => {
+      if (value === null) {
+        setCurrentFavoritePartState(null);
+        return;
+      }
+      if (!currentTrack || currentTrack.id !== value.trackId) return;
+      setCurrentFavoritePartState(value);
+    },
+    [currentTrack]
+  );
+
   const play = useCallback(
     async (options: {
       uris?: string[];
       contextUri?: string;
       offsetIndex?: number;
+      offsetUri?: string;
+      playlistId?: PlayingPlaylist;
     }) => {
       if (!deviceId || !token) return;
-      await startPlayback(token, deviceId, options);
+      // startPlayback only needs the SDK-relevant fields. playlistId
+      // is metadata for our spin animation — strip it before forwarding.
+      const { playlistId, ...sdkOptions } = options;
+      await startPlayback(token, deviceId, sdkOptions);
+      // Only update on success — a 4xx from Spotify shouldn't change
+      // which playlist we display as "playing" since nothing actually
+      // started.
+      if (playlistId) setCurrentPlaylistId(playlistId);
     },
     [deviceId, token]
   );
@@ -195,12 +305,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         position,
         duration,
         isShuffled,
+        currentFavoritePart,
+        currentPlaylistId,
         play,
         togglePlayPause,
         skipNext,
         skipPrev,
         seek,
         toggleShuffle,
+        setCurrentFavoritePart,
       }}
     >
       {children}

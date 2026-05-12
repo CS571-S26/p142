@@ -6,15 +6,13 @@ import {
   clearTokens,
   RefreshError,
 } from "./spotifyAuth";
+// Single source of truth for the palette — see vinylColors.ts.
+// Importing keeps the round-robin assignment here in lockstep with the
+// swatches CreatePlaylistModal renders.
+import { VINYL_COLORS } from "./vinylColors";
 
 const BASE = "https://api.spotify.com/v1";
 const CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID ?? "";
-
-const VINYL_COLORS = [
-  "#1a1a2e", "#16213e", "#0f3460", "#e94560",
-  "#533483", "#2b2d42", "#8d99ae", "#d90429",
-  "#006d77", "#e29578", "#264653", "#2a9d8f",
-];
 
 function pickColor(index: number): string {
   return VINYL_COLORS[index % VINYL_COLORS.length];
@@ -155,6 +153,7 @@ export async function fetchTrack(
 ): Promise<Song> {
   const t = await spotifyFetch<{
     id: string;
+    uri?: string;
     name: string;
     artists: { name: string }[];
     album: { name: string; images: SpotifyImage[] };
@@ -170,6 +169,11 @@ export async function fetchTrack(
     noteCount: 0,
     favoriteCount: 0,
     duration: formatDuration(t.duration_ms),
+    // Carry the raw ms through so callers (favorite-part editor in
+    // SongView, anyone doing arithmetic) don't have to re-derive it
+    // from the formatted "M:SS" string.
+    durationMs: t.duration_ms,
+    uri: t.uri ?? `spotify:track:${t.id}`,
   };
 }
 
@@ -337,16 +341,37 @@ export async function removeTracksFromPlaylist(
 export async function startPlayback(
   token: string,
   deviceId: string,
-  options: { uris?: string[]; contextUri?: string; offsetIndex?: number } = {}
+  options: {
+    uris?: string[];
+    contextUri?: string;
+    /** 0-based index into the context (or the uris array). */
+    offsetIndex?: number;
+    /** Track URI to start at — alternative to offsetIndex when the
+     * caller knows the URI but not the position. Spotify accepts only
+     * one offset shape; if both are passed, offsetUri wins. */
+    offsetUri?: string;
+  } = {}
 ): Promise<void> {
   const body: Record<string, unknown> = {};
+  // Spotify's offset object: { position } OR { uri }, never both.
+  // Build it once here so the contextUri / uris branches stay simple.
+  const offset =
+    options.offsetUri != null
+      ? { uri: options.offsetUri }
+      : options.offsetIndex != null
+        ? { position: options.offsetIndex }
+        : null;
+
   if (options.contextUri) {
     body.context_uri = options.contextUri;
-    if (options.offsetIndex != null) {
-      body.offset = { position: options.offsetIndex };
-    }
+    if (offset) body.offset = offset;
   } else if (options.uris) {
     body.uris = options.uris;
+    // The /me/player/play endpoint also accepts `offset` alongside
+    // `uris` — useful for the AppPlaylistView case where we hand
+    // Spotify the full URI list and want to start at a specific
+    // index. Honored for both shapes, same as the contextUri branch.
+    if (offset) body.offset = offset;
   }
 
   const res = await fetch(

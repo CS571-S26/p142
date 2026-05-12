@@ -5,6 +5,7 @@ import {
   Bookmark,
   BookmarkCheck,
   Check,
+  Heart,
   LogOut,
   Mail,
   Music,
@@ -59,7 +60,15 @@ export function AppPlaylistView() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, signOut } = useAppUser();
   const { token, isConnected, login } = useSpotify();
-  const { play, isReady } = usePlayer();
+  const {
+    play,
+    isReady,
+    currentTrack,
+    position,
+    setCurrentFavoritePart,
+    isPlaying,
+    currentPlaylistId,
+  } = usePlayer();
 
   // Anonymous-viewer "Sign up" entry point. Stash the current playlist
   // path before bouncing to auth so LandingPage can return the user here
@@ -116,6 +125,28 @@ export function AppPlaylistView() {
   useEffect(() => {
     void loadDetail();
   }, [loadDetail]);
+
+  // ---- Push the active row's favorite part into the player ---------------
+  // When the player's currentTrack matches one of the rows in this
+  // playlist AND that row has a favorite part set, push it to
+  // PlayerContext so the global NowPlayingBar gets a band. This is also
+  // how AppSongView's band stays correct after the user navigates back
+  // to the playlist while playback continues — the page-set highlight
+  // would otherwise be cleared by the auto-clear on track change.
+  useEffect(() => {
+    if (!detail || !currentTrack?.id) return;
+    const row = detail.songs.find((s) => s.trackId === currentTrack.id);
+    if (!row) return;
+    if (row.favoriteStartMs != null && row.favoriteEndMs != null) {
+      setCurrentFavoritePart({
+        startMs: row.favoriteStartMs,
+        endMs: row.favoriteEndMs,
+        trackId: currentTrack.id,
+      });
+    } else {
+      setCurrentFavoritePart(null);
+    }
+  }, [detail, currentTrack?.id, setCurrentFavoritePart]);
 
   // --- Playlist-level metadata editing (name + description) -----------------
   const [editName, setEditName] = useState("");
@@ -462,10 +493,19 @@ export function AppPlaylistView() {
             sm: up. On mobile we center the vinyl + heading; on desktop we
             keep the original left-aligned two-column. */}
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 sm:gap-8 mb-8 sm:mb-10">
-          <div className="flex-shrink-0">
+          {/* `group` enables the hover-triggered spin via the
+              `.group:hover .vinyl-disc` rule in index.css. The
+              `spinning` prop kicks the same animation off when this
+              app-playlist is sourcing the audio. */}
+          <div className="flex-shrink-0 group">
             <VinylRecord
               color={detail.vinylColor}
               className="size-36 sm:size-44 lg:size-[200px]"
+              spinning={
+                isPlaying &&
+                currentPlaylistId?.kind === "app" &&
+                currentPlaylistId.id === detail.id
+              }
             />
           </div>
           <div className="flex-1 sm:pt-4 min-w-0 w-full text-center sm:text-left">
@@ -534,6 +574,7 @@ export function AppPlaylistView() {
                       uris: songs.map(
                         (s) => s.song.uri ?? `spotify:track:${s.trackId}`
                       ),
+                      playlistId: { kind: "app", id: detail.id },
                     })
                   }
                   className="bg-[#FF9F45] hover:bg-[#FF8C2E] text-[#3D2817] font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
@@ -819,7 +860,10 @@ export function AppPlaylistView() {
               // the row remounts with fresh local draft state — no
               // setState-in-effect needed to sync.
               <SongRow
-                key={`${entry.trackId}-${entry.position}-${entry.annotation ?? ""}`}
+                // Re-key on annotation AND favorite-part so the row
+                // remounts with fresh local state when the owner saves
+                // either kind of edit.
+                key={`${entry.trackId}-${entry.position}-${entry.annotation ?? ""}-${entry.favoriteStartMs ?? ""}-${entry.favoriteEndMs ?? ""}`}
                 entry={entry}
                 index={index}
                 isEditing={isEditing && isOwner}
@@ -835,10 +879,22 @@ export function AppPlaylistView() {
                       (s) => s.song.uri ?? `spotify:track:${s.trackId}`
                     ),
                     offsetIndex: index,
+                    playlistId: { kind: "app", id: detail.id },
                   })
                 }
                 onOpen={() =>
                   navigate(`/app-playlist/${detail.id}/song/${entry.trackId}`)
+                }
+                inFavoritePart={
+                  // Highlight when this row's track is the one playing
+                  // AND the playback position is inside its favorite
+                  // range. Reads `position` directly from PlayerContext
+                  // so the row updates as the position ticks.
+                  currentTrack?.id === entry.trackId &&
+                  entry.favoriteStartMs != null &&
+                  entry.favoriteEndMs != null &&
+                  position >= entry.favoriteStartMs &&
+                  position <= entry.favoriteEndMs
                 }
               />
             ))
@@ -934,6 +990,10 @@ interface SongRowProps {
   // mode the row hosts the inline annotation editor, so clicks should
   // stay on this page.
   onOpen: () => void;
+  /** True when (a) this row's track is currently playing AND (b) the
+   * playback position falls inside the row's favorite-part range.
+   * Drives the row-level "in favorite part" indicator. */
+  inFavoritePart?: boolean;
 }
 
 function SongRow({
@@ -946,6 +1006,7 @@ function SongRow({
   canPlay,
   onPlay,
   onOpen,
+  inFavoritePart = false,
 }: SongRowProps) {
   // Local draft of the annotation being edited. The parent re-keys this
   // component on `entry.annotation`, so when a save completes the row
@@ -980,6 +1041,10 @@ function SongRow({
         isEditing
           ? ""
           : "hover:bg-[#FFF8E7] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45] focus-visible:ring-inset"
+      } ${
+        inFavoritePart
+          ? "bg-[#FFF1DA] !border-l-4 !border-l-[#FF9F45]"
+          : ""
       }`}
     >
       <div className="flex items-start gap-3 sm:gap-4">
@@ -1029,6 +1094,21 @@ function SongRow({
         </div>
 
         <div className="flex items-center gap-2 sm:gap-4 text-sm text-[#785A38] pt-1">
+          {/* "Now in favorite part" marker. Visible whenever the parent
+              flagged this row as in-band; sized to be obvious without
+              hijacking the row's hit target. We render it on every
+              breakpoint (it IS the indicator the user is looking for) —
+              the duration text adjacent to it is the one that hides on
+              phones, not this. */}
+          {inFavoritePart && (
+            <span
+              aria-label="In favorite part"
+              title="Now in the favorite part"
+              className="inline-flex items-center justify-center size-6 rounded-full bg-[#FF9F45] text-[#3D2817] border-2 border-[#3D2817]"
+            >
+              <Heart className="size-3 fill-current" aria-hidden="true" />
+            </span>
+          )}
           {/* Duration is nice-to-have, not load-bearing — drop it on
               tiny screens so the title and remove button get more room. */}
           {entry.song.duration && (

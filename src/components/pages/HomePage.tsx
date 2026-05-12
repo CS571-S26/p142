@@ -3,6 +3,7 @@ import { Button } from "./ui/button";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useSpotify } from "../data/SpotifyContext";
 import { useAppUser } from "../data/AppUserContext";
+import { usePlayer } from "../data/PlayerContext";
 import { fetchUserPlaylists } from "../data/spotifyApi";
 import type { Playlist } from "../data/types";
 import {
@@ -54,7 +55,22 @@ export function HomePage() {
   const navigate = useNavigate();
   const { token, isConnected, login } = useSpotify();
   const { user, signOut } = useAppUser();
+  const { currentPlaylistId, isPlaying } = usePlayer();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Helper: is this card the playlist whose audio is currently playing?
+  // Combines the active-playlist tag with isPlaying so paused playlists
+  // stay still, matching the user's intuition of "spinning = audio in
+  // motion." Two helpers because cards from /me/playlists are Spotify-
+  // sourced while SpinDeck cards are app-sourced.
+  const isAppPlaylistPlaying = (id: string) =>
+    isPlaying &&
+    currentPlaylistId?.kind === "app" &&
+    currentPlaylistId.id === id;
+  const isSpotifyPlaylistPlaying = (id: string) =>
+    isPlaying &&
+    currentPlaylistId?.kind === "spotify" &&
+    currentPlaylistId.id === id;
 
   const visible = parseShowParam(searchParams.get("show"));
 
@@ -376,10 +392,11 @@ export function HomePage() {
                   className="text-left cursor-pointer group rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FFF8E7]"
                 >
                   <div className="mb-3 sm:mb-4 flex justify-center">
-                    <div className="transition-transform group-hover:scale-105 group-hover:rotate-12">
+                    <div className="transition-transform group-hover:scale-105">
                       <VinylRecord
                         color={pl.vinylColor}
                         className="size-32 sm:size-40 md:size-44"
+                        spinning={isAppPlaylistPlaying(pl.id)}
                       />
                     </div>
                   </div>
@@ -449,10 +466,11 @@ export function HomePage() {
                   className="text-left cursor-pointer group rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FFF8E7]"
                 >
                   <div className="mb-3 sm:mb-4 flex justify-center">
-                    <div className="transition-transform group-hover:scale-105 group-hover:rotate-12">
+                    <div className="transition-transform group-hover:scale-105">
                       <VinylRecord
                         color={pl.vinylColor}
                         className="size-32 sm:size-40 md:size-44"
+                        spinning={isAppPlaylistPlaying(pl.id)}
                       />
                     </div>
                   </div>
@@ -539,10 +557,11 @@ export function HomePage() {
                   className="text-left cursor-pointer group rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FFF8E7]"
                 >
                   <div className="mb-3 sm:mb-4 flex justify-center">
-                    <div className="transition-transform group-hover:scale-105 group-hover:rotate-12">
+                    <div className="transition-transform group-hover:scale-105">
                       <VinylRecord
                         color={playlist.vinylColor}
                         className="size-32 sm:size-40 md:size-44"
+                        spinning={isSpotifyPlaylistPlaying(playlist.id)}
                       />
                     </div>
                   </div>

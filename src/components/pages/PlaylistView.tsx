@@ -41,7 +41,14 @@ export function PlaylistView() {
   const location = useLocation();
   const { token } = useSpotify();
   const { user, signOut } = useAppUser();
-  const { play, isReady } = usePlayer();
+  const { play, isReady, isPlaying, currentPlaylistId } = usePlayer();
+  // Spin the header vinyl when this playlist is the audio source AND
+  // playback is actually moving — paused state stays still, matching
+  // the user's intuition.
+  const isThisPlaylistPlaying =
+    isPlaying &&
+    currentPlaylistId?.kind === "spotify" &&
+    currentPlaylistId.id === playlistId;
 
   const routeState = location.state as {
     name?: string;
@@ -271,10 +278,15 @@ export function PlaylistView() {
 
       <div className="max-w-4xl mx-auto px-4 sm:px-8 py-6 sm:py-12">
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 sm:gap-8 mb-8 sm:mb-12">
-          <div className="flex-shrink-0">
+          {/* `group` here lets `.group:hover .vinyl-disc` (in index.css)
+              kick in when the user hovers the vinyl region — same
+              affordance as the home cards, just on the bigger header
+              vinyl. */}
+          <div className="flex-shrink-0 group">
             <VinylRecord
               color={vinylColor}
               className="size-36 sm:size-44 lg:size-[200px]"
+              spinning={isThisPlaylistPlaying}
             />
           </div>
           <div className="flex-1 sm:pt-8 w-full text-center sm:text-left">
@@ -292,7 +304,12 @@ export function PlaylistView() {
                 <Button
                   onClick={(e) => {
                     e.stopPropagation();
-                    play({ contextUri: `spotify:playlist:${playlistId}` });
+                    play({
+                      contextUri: `spotify:playlist:${playlistId}`,
+                      playlistId: playlistId
+                        ? { kind: "spotify", id: playlistId }
+                        : undefined,
+                    });
                   }}
                   className="bg-[#FF9F45] hover:bg-[#FF8C2E] text-[#3D2817] font-semibold border-2 border-[#3D2817] shadow-[4px_4px_0px_0px_rgba(61,40,23,1)] hover:shadow-[2px_2px_0px_0px_rgba(61,40,23,1)] transition-all"
                 >
@@ -557,6 +574,9 @@ export function PlaylistView() {
                             play({
                               contextUri: `spotify:playlist:${playlistId}`,
                               offsetIndex: index,
+                              playlistId: playlistId
+                                ? { kind: "spotify", id: playlistId }
+                                : undefined,
                             });
                           }}
                           className="absolute inset-0 flex items-center justify-center invisible group-hover:visible"

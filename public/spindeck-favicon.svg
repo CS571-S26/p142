@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpinDeck favicon. Square viewBox (200x200) so it doesn't letterbox at
+  16x16 / 32x32. Mirrors the in-app VinylRecord SVG visually but uses
+  the brand orange (#FF9F45) as the disc color so it reads on both dark
+  and light browser chrome.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 200 200"
+  fill="none"
+>
+  <!-- Outer disc -->
+  <circle cx="100" cy="100" r="95" fill="#FF9F45" stroke="#3D2817" stroke-width="6" />
+  <!-- Grooves -->
+  <circle cx="100" cy="100" r="82" fill="none" stroke="#3D2817" stroke-opacity="0.18" stroke-width="2" />
+  <circle cx="100" cy="100" r="70" fill="none" stroke="#3D2817" stroke-opacity="0.18" stroke-width="2" />
+  <circle cx="100" cy="100" r="58" fill="none" stroke="#3D2817" stroke-opacity="0.18" stroke-width="2" />
+  <circle cx="100" cy="100" r="46" fill="none" stroke="#3D2817" stroke-opacity="0.18" stroke-width="2" />
+  <!-- Center label -->
+  <circle cx="100" cy="100" r="34" fill="#FFE8BA" stroke="#3D2817" stroke-width="3" />
+  <!-- Spindle hole -->
+  <circle cx="100" cy="100" r="6" fill="#3D2817" />
+</svg>

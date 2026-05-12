@@ -7,6 +7,20 @@ import {
   type ReactNode,
 } from "react";
 import { supabase, SUPABASE_CONFIGURED } from "./supabaseClient";
+import { formatError } from "./formatError";
+// Label-style enum + helpers live in their own module so this file
+// can keep the react-refresh rule happy (component files should
+// export only components / hooks). Re-exported below for backward
+// compatibility — older callsites import them from here.
+import {
+  parseLabelStyle,
+  type VinylLabelStyle,
+} from "./vinylLabelStyle";
+export {
+  DEFAULT_VINYL_LABEL_STYLE,
+  VINYL_LABEL_STYLES,
+} from "./vinylLabelStyle";
+export type { VinylLabelStyle } from "./vinylLabelStyle";
 
 // ---------------------------------------------------------------------
 // Types
@@ -17,6 +31,7 @@ export interface AppUser {
   username: string;
   displayName: string | null;
   vinylColor: string;
+  vinylLabelStyle: VinylLabelStyle;
 }
 
 type Status =
@@ -38,7 +53,9 @@ interface AppUserContextValue {
     displayName?: string;
   }) => Promise<Result>;
   signIn: (args: { identifier: string; password: string }) => Promise<Result>;
-  updateProfile: (patch: Partial<Pick<AppUser, "displayName" | "vinylColor">>) => Promise<void>;
+  updateProfile: (
+    patch: Partial<Pick<AppUser, "displayName" | "vinylColor" | "vinylLabelStyle">>
+  ) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -53,6 +70,7 @@ interface AppUserRow {
   username: string;
   display_name: string | null;
   vinyl_color: string;
+  vinyl_label_style: string | null;
 }
 
 function rowToUser(row: AppUserRow): AppUser {
@@ -61,6 +79,7 @@ function rowToUser(row: AppUserRow): AppUser {
     username: row.username,
     displayName: row.display_name,
     vinylColor: row.vinyl_color,
+    vinylLabelStyle: parseLabelStyle(row.vinyl_label_style),
   };
 }
 
@@ -108,7 +127,7 @@ export function AppUserProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async (authUserId: string): Promise<AppUser | null> => {
     const { data, error } = await supabase
       .from("app_users")
-      .select("id, username, display_name, vinyl_color")
+      .select("id, username, display_name, vinyl_color, vinyl_label_style")
       .eq("id", authUserId)
       .maybeSingle();
 
@@ -153,7 +172,7 @@ export function AppUserProvider({ children }: { children: ReactNode }) {
         await reconcile();
       } catch (e) {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : String(e));
+        setError(formatError(e));
         setStatus("error");
       }
     })();
@@ -162,7 +181,7 @@ export function AppUserProvider({ children }: { children: ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange(() => {
       if (cancelled) return;
       reconcile().catch((e) => {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(formatError(e));
         setStatus("error");
       });
     });
@@ -255,7 +274,7 @@ export function AppUserProvider({ children }: { children: ReactNode }) {
         };
       } catch (e) {
         console.error("[AppUserContext] signUp failed:", e);
-        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+        return { ok: false, error: formatError(e) };
       }
     },
     [reconcile]
@@ -320,25 +339,31 @@ export function AppUserProvider({ children }: { children: ReactNode }) {
         };
       } catch (e) {
         console.error("[AppUserContext] signIn failed:", e);
-        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+        return { ok: false, error: formatError(e) };
       }
     },
     [reconcile]
   );
 
   const updateProfile = useCallback(
-    async (patch: Partial<Pick<AppUser, "displayName" | "vinylColor">>) => {
+    async (
+      patch: Partial<
+        Pick<AppUser, "displayName" | "vinylColor" | "vinylLabelStyle">
+      >
+    ) => {
       if (!user) return;
       const dbPatch: Record<string, unknown> = {};
       if (patch.displayName !== undefined) dbPatch.display_name = patch.displayName;
       if (patch.vinylColor !== undefined) dbPatch.vinyl_color = patch.vinylColor;
+      if (patch.vinylLabelStyle !== undefined)
+        dbPatch.vinyl_label_style = patch.vinylLabelStyle;
       if (Object.keys(dbPatch).length === 0) return;
 
       const { data, error } = await supabase
         .from("app_users")
         .update(dbPatch)
         .eq("id", user.id)
-        .select("id, username, display_name, vinyl_color")
+        .select("id, username, display_name, vinyl_color, vinyl_label_style")
         .single();
 
       if (error) throw error;

@@ -1,4 +1,4 @@
-import { Play, Pause, Shuffle, SkipBack, SkipForward } from "lucide-react";
+import { Heart, Play, Pause, Shuffle, SkipBack, SkipForward } from "lucide-react";
 import { usePlayer } from "../data/PlayerContext";
 
 function formatTime(ms: number): string {
@@ -16,6 +16,7 @@ export function NowPlayingBar() {
     position,
     duration,
     isShuffled,
+    currentFavoritePart,
     togglePlayPause,
     skipNext,
     skipPrev,
@@ -26,6 +27,21 @@ export function NowPlayingBar() {
   if (!isReady || !currentTrack) return null;
 
   const progress = duration > 0 ? (position / duration) * 100 : 0;
+
+  // Favorite-part overlay percentages. Only render when (a) the highlight
+  // is for the same track the player thinks is playing (defense-in-depth
+  // against any stale push), and (b) we have a real duration to scale to.
+  // We deliberately do NOT clamp to currentTrack.duration_ms — duration
+  // here comes from the player's own player_state_changed event, so they
+  // agree.
+  const fav =
+    currentFavoritePart && currentFavoritePart.trackId === currentTrack.id
+      ? currentFavoritePart
+      : null;
+  const favStartPct = fav && duration > 0 ? (fav.startMs / duration) * 100 : 0;
+  const favEndPct = fav && duration > 0 ? (fav.endMs / duration) * 100 : 0;
+  const inFavorite =
+    !!fav && position >= fav.startMs && position <= fav.endMs;
 
   function handleProgressClick(e: React.MouseEvent<HTMLElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -64,10 +80,23 @@ export function NowPlayingBar() {
         aria-valuetext={`${formatTime(position)} of ${formatTime(duration)}`}
         onClick={handleProgressClick}
         onKeyDown={handleProgressKey}
-        className="h-1 bg-[#2A1B10] cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45] focus-visible:ring-inset"
+        className="relative h-1 bg-[#2A1B10] cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45] focus-visible:ring-inset"
       >
+        {/* Favorite-part band — sits BEHIND the played-progress fill so
+            the played portion still reads cleanly in the canonical
+            orange. The band is a softer salmon so it doesn't clash. */}
+        {fav && (
+          <div
+            aria-hidden="true"
+            className="absolute top-0 h-full bg-[#FF9F45]/40 pointer-events-none"
+            style={{
+              left: `${favStartPct}%`,
+              width: `${Math.max(0, favEndPct - favStartPct)}%`,
+            }}
+          />
+        )}
         <div
-          className="h-full bg-[#FF9F45] group-hover:bg-[#FFD699] transition-colors"
+          className="relative h-full bg-[#FF9F45] group-hover:bg-[#FFD699] transition-colors"
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -82,7 +111,24 @@ export function NowPlayingBar() {
         )}
 
         <div className="flex-1 min-w-0 sm:mr-4">
-          <p className="text-sm font-semibold truncate">{currentTrack.name}</p>
+          <p className="text-sm font-semibold truncate flex items-center gap-2">
+            <span className="truncate">{currentTrack.name}</span>
+            {/* "In favorite part" chip. Only rendered while playback is
+                inside the band and we actually have a band to show; the
+                chip is small enough to live next to the title without
+                stealing focus, and disappears the instant playback
+                leaves the range. */}
+            {inFavorite && (
+              <span
+                aria-label="Currently in the favorite part"
+                title="In the favorite part"
+                className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#FF9F45] text-[#3D2817] text-[10px] font-bold border-2 border-[#3D2817] flex-shrink-0"
+              >
+                <Heart className="size-3 fill-current" aria-hidden="true" />
+                Favorite
+              </span>
+            )}
+          </p>
           <p className="text-xs text-[#E6D5B8] truncate">{currentTrack.artist}</p>
         </div>
 

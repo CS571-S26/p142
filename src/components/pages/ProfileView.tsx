@@ -2,7 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Check, LogOut, Pencil, X } from "lucide-react";
 import { Button } from "./ui/button";
-import { useAppUser } from "../data/AppUserContext";
+import {
+  useAppUser,
+  VINYL_LABEL_STYLES,
+  type VinylLabelStyle,
+} from "../data/AppUserContext";
 import {
   fetchProfileByUsername,
   fetchUserStats,
@@ -19,6 +23,17 @@ import { VinylRecord } from "./VinylRecord";
 // view-only). One component instead of two so layout / styling stays in lock-
 // step; the only branch is on `isOwn`, which gates the inline edit affordance.
 // =============================================================================
+
+// Human-readable names for the label-style picker. Keys mirror
+// VinylLabelStyle exactly. Co-located here (rather than in
+// AppUserContext) because this is presentation copy specific to the
+// profile page; the underlying enum is platform-level.
+const LABEL_STYLE_NAMES: Record<VinylLabelStyle, string> = {
+  wordmark: "Wordmark",
+  monogram: "Monogram",
+  tick: "Tick",
+  spokes: "Spokes",
+};
 
 interface Props {
   /** When true the route is /profile and we render the signed-in user's
@@ -102,12 +117,13 @@ export function ProfileView({ ownProfile = false }: Props) {
   }, [profile]);
 
   // ---- Inline edit (own profile only) ------------------------------------
-  // Only the display name is editable here. Username changes are a
-  // bigger deal (everything keys on it) and we're keeping this page
-  // simple for now; users can re-create an account if they really
-  // need a new handle.
+  // Display name + vinyl label-style preference. Username changes
+  // remain off-limits (everything keys on it) — users can re-create
+  // an account if they really need a new handle.
   const [editing, setEditing] = useState(false);
   const [draftDisplayName, setDraftDisplayName] = useState("");
+  const [draftLabelStyle, setDraftLabelStyle] =
+    useState<VinylLabelStyle>("wordmark");
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -115,18 +131,35 @@ export function ProfileView({ ownProfile = false }: Props) {
     setDraftDisplayName(profile?.displayName ?? "");
   }, [profile?.displayName]);
 
+  useEffect(() => {
+    if (profile?.vinylLabelStyle) setDraftLabelStyle(profile.vinylLabelStyle);
+  }, [profile?.vinylLabelStyle]);
+
   async function handleSaveEdit() {
     if (!isOwn) return;
     setSavingEdit(true);
     setEditError(null);
     try {
       const cleaned = draftDisplayName.trim();
-      await updateProfile({ displayName: cleaned.length > 0 ? cleaned : null });
+      const styleChanged =
+        profile?.vinylLabelStyle !== draftLabelStyle;
+      // Send only the fields that actually changed — keeps the PATCH
+      // minimal and avoids no-op writes that would bump updated_at.
+      await updateProfile({
+        displayName: cleaned.length > 0 ? cleaned : null,
+        ...(styleChanged ? { vinylLabelStyle: draftLabelStyle } : {}),
+      });
       // updateProfile mutates the AppUser in context, but we also
       // patch the local profile snapshot so the read-mode view shows
-      // the new name immediately.
+      // the new values immediately.
       setProfile((prev) =>
-        prev ? { ...prev, displayName: cleaned.length > 0 ? cleaned : null } : prev
+        prev
+          ? {
+              ...prev,
+              displayName: cleaned.length > 0 ? cleaned : null,
+              vinylLabelStyle: draftLabelStyle,
+            }
+          : prev
       );
       setEditing(false);
     } catch (e) {
@@ -197,6 +230,11 @@ export function ProfileView({ ownProfile = false }: Props) {
             <VinylRecord
               color={profile.vinylColor}
               className="size-32 sm:size-40"
+              // Preview the draft style live on the avatar while the
+              // user is in edit mode. Outside edit mode, leave the
+              // prop unset so VinylRecord falls back to the context
+              // default (= the saved style).
+              labelStyle={editing && isOwn ? draftLabelStyle : undefined}
             />
           </div>
 
@@ -220,6 +258,48 @@ export function ProfileView({ ownProfile = false }: Props) {
                     className="w-full rounded-md border-2 border-[#3D2817] px-3 py-2 bg-white text-[#3D2817] placeholder:text-[#785A38] focus:outline-none focus:ring-2 focus:ring-[#FF9F45]"
                   />
                 </div>
+
+                {/* ---- Vinyl label style picker ---- */}
+                {/* Renders a small preview vinyl per style so the user
+                    sees the actual mark (not just the name). The
+                    selected button gets a thicker brown ring + scale
+                    bump so the active choice is unambiguous. fieldset
+                    + legend groups the radio-like buttons for screen
+                    readers. */}
+                <fieldset>
+                  <legend className="block text-sm font-semibold text-[#3D2817] mb-2">
+                    Vinyl label style
+                  </legend>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {VINYL_LABEL_STYLES.map((style) => {
+                      const selected = style === draftLabelStyle;
+                      return (
+                        <button
+                          key={style}
+                          type="button"
+                          onClick={() => setDraftLabelStyle(style)}
+                          aria-pressed={selected}
+                          aria-label={`Use ${LABEL_STYLE_NAMES[style]} label`}
+                          className={`flex flex-col items-center gap-1.5 rounded-md p-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45] ${
+                            selected
+                              ? "bg-[#FFE8BA] border-2 border-[#3D2817] shadow-[3px_3px_0px_0px_rgba(61,40,23,1)] scale-[1.02]"
+                              : "bg-white border-2 border-[#3D2817]/30 hover:border-[#3D2817] hover:bg-[#FFF8E7]"
+                          }`}
+                        >
+                          <VinylRecord
+                            color={profile.vinylColor}
+                            size={64}
+                            labelStyle={style}
+                          />
+                          <span className="text-xs font-semibold text-[#3D2817]">
+                            {LABEL_STYLE_NAMES[style]}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+
                 {editError && (
                   <p className="text-sm text-red-700 bg-red-50 border border-red-300 rounded px-3 py-2">
                     {editError}
@@ -238,6 +318,7 @@ export function ProfileView({ ownProfile = false }: Props) {
                     variant="outline"
                     onClick={() => {
                       setDraftDisplayName(profile.displayName ?? "");
+                      setDraftLabelStyle(profile.vinylLabelStyle);
                       setEditing(false);
                       setEditError(null);
                     }}

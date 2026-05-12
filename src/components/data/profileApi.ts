@@ -1,5 +1,10 @@
 import { supabase } from "./supabaseClient";
 import type { AppPlaylistSummary } from "./appPlaylistsApi";
+import type { VinylLabelStyle } from "./AppUserContext";
+import {
+  DEFAULT_VINYL_LABEL_STYLE,
+  VINYL_LABEL_STYLES,
+} from "./AppUserContext";
 
 // ---------------------------------------------------------------------------
 // profileApi — read-only helpers for the profile page.
@@ -24,6 +29,7 @@ export interface PublicProfile {
   username: string;
   displayName: string | null;
   vinylColor: string;
+  vinylLabelStyle: VinylLabelStyle;
   /** ISO timestamp of when the user joined SpinDeck. */
   createdAt: string | null;
 }
@@ -38,21 +44,30 @@ interface AppUserPublicRow {
   username: string;
   display_name: string | null;
   vinyl_color: string;
+  vinyl_label_style: string | null;
   created_at: string | null;
 }
 
 function rowToProfile(row: AppUserPublicRow): PublicProfile {
+  // Mirror AppUserContext.parseLabelStyle — defensive fallback for
+  // rows inserted before the migration.
+  const raw = row.vinyl_label_style;
+  const labelStyle: VinylLabelStyle =
+    raw && (VINYL_LABEL_STYLES as string[]).includes(raw)
+      ? (raw as VinylLabelStyle)
+      : DEFAULT_VINYL_LABEL_STYLE;
   return {
     id: row.id,
     username: row.username,
     displayName: row.display_name,
     vinylColor: row.vinyl_color,
+    vinylLabelStyle: labelStyle,
     createdAt: row.created_at,
   };
 }
 
 const PROFILE_COLUMNS =
-  "id, username, display_name, vinyl_color, created_at";
+  "id, username, display_name, vinyl_color, vinyl_label_style, created_at";
 
 // ---------------------------------------------------------------------------
 // Fetch by username — exact, case-insensitive.

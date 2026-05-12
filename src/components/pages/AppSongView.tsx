@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import {
   ArrowLeft,
+  Heart,
   LogOut,
   Pause,
   Pencil,
@@ -11,12 +12,15 @@ import {
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
+import { FavoritePartEditor } from "./ui/FavoritePartEditor";
+import { FavoritePartDisplay } from "./ui/FavoritePartDisplay";
 import { useSpotify } from "../data/SpotifyContext";
 import { useAppUser } from "../data/AppUserContext";
 import { usePlayer } from "../data/PlayerContext";
 import {
   fetchPlaylist,
   updateAnnotation,
+  updateAppPlaylistFavoritePart,
   type AppPlaylistDetail,
   type AppPlaylistSong,
 } from "../data/appPlaylistsApi";
@@ -39,7 +43,16 @@ export function AppSongView() {
   const navigate = useNavigate();
   const { user, signOut } = useAppUser();
   const { isConnected } = useSpotify();
-  const { play, isReady, isPlaying, currentTrack, togglePlayPause } = usePlayer();
+  const {
+    play,
+    isReady,
+    isPlaying,
+    currentTrack,
+    togglePlayPause,
+    seek,
+    position,
+    setCurrentFavoritePart,
+  } = usePlayer();
 
   const [detail, setDetail] = useState<AppPlaylistDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,6 +82,15 @@ export function AppSongView() {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // ---- Favorite part (owner-set, lives on app_playlist_songs row) ---------
+  // Comes inline with the playlist fetch, so there's no second loading
+  // state — read from the entry directly. Saving / clearing patches the
+  // entry in local state and pushes the new value through to
+  // PlayerContext when this track is the one playing.
+  const [favoriteEditing, setFavoriteEditing] = useState(false);
+  const [favoriteSaving, setFavoriteSaving] = useState(false);
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
 
   // Reset the draft whenever the underlying annotation changes (load,
   // remote update, etc.) so opening the editor always starts from the
@@ -108,6 +130,138 @@ export function AppSongView() {
       setSaveError(formatError(e, "Couldn't save description."));
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ---- Favorite-part actions (owner-only) --------------------------------
+  // Owner-only is enforced by RLS in updateAppPlaylistFavoritePart; the
+  // UI also gates the editor behind isOwner so non-owners never see it.
+  // Patches the local entry in place so the read view shows the new
+  // value without re-fetching the whole playlist.
+  async function handleFavoriteSave(value: { startMs: number; endMs: number }) {
+    if (!detail || !entry) return;
+    setFavoriteSaving(true);
+    setFavoriteError(null);
+    try {
+      await updateAppPlaylistFavoritePart({
+        playlistId: detail.id,
+        position: entry.position,
+        startMs: value.startMs,
+        endMs: value.endMs,
+      });
+      setDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              songs: prev.songs.map((s) =>
+                s.position === entry.position
+                  ? { ...s, favoriteStartMs: value.startMs, favoriteEndMs: value.endMs }
+                  : s
+              ),
+            }
+          : prev
+      );
+      setFavoriteEditing(false);
+    } catch (e) {
+      setFavoriteError(formatError(e, "Couldn't save favorite part."));
+    } finally {
+      setFavoriteSaving(false);
+    }
+  }
+
+  async function handleFavoriteClear() {
+    if (!detail || !entry) return;
+    setFavoriteSaving(true);
+    setFavoriteError(null);
+    try {
+      await updateAppPlaylistFavoritePart({
+        playlistId: detail.id,
+        position: entry.position,
+        startMs: null,
+        endMs: null,
+      });
+      setDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              songs: prev.songs.map((s) =>
+                s.position === entry.position
+                  ? { ...s, favoriteStartMs: null, favoriteEndMs: null }
+                  : s
+              ),
+            }
+          : prev
+      );
+      setFavoriteEditing(false);
+    } catch (e) {
+      setFavoriteError(formatError(e, "Couldn't clear favorite part."));
+    } finally {
+      setFavoriteSaving(false);
+    }
+  }
+
+  // Push the favorite part up to PlayerContext when this track is the
+  // one currently playing — that's how NowPlayingBar gets the band.
+  // We re-evaluate on entry change too, so editing the favorite part
+  // while the track is playing updates the bar in the same render.
+  useEffect(() => {
+    if (!entry || !songId) return;
+    const isThis = currentTrack?.id === songId;
+    if (!isThis) return;
+    if (entry.favoriteStartMs != null && entry.favoriteEndMs != null) {
+      setCurrentFavoritePart({
+        startMs: entry.favoriteStartMs,
+        endMs: entry.favoriteEndMs,
+        trackId: songId,
+      });
+    } else {
+      setCurrentFavoritePart(null);
+    }
+  }, [entry, songId, currentTrack?.id, setCurrentFavoritePart]);
+
+  // Kick off playback for `entry` inside the parent app-playlist's
+  // queue. App-playlists don't have a Spotify URI we can use as
+  // contextUri, so we instead pass the full URIs list with an
+  // offsetIndex — Spotify treats that as a one-shot context and
+  // skip / on-end-advance both work as expected.
+  //
+  // Returns true if a playlist-context play was issued; false (with a
+  // single-URI fallback already issued) when we couldn't find this
+  // entry in detail.songs (shouldn't happen, but keeps the page
+  // robust).
+  function startTrackInPlaylistContext(): boolean {
+    if (!detail || !songId) return false;
+    const idx = detail.songs.findIndex((s) => s.trackId === songId);
+    if (idx < 0) {
+      // Fallback path — still tag the playlist so the vinyl spin tracks
+      // even when the entry vanished mid-page.
+      void play({
+        uris: [`spotify:track:${songId}`],
+        playlistId: { kind: "app", id: detail.id },
+      });
+      return false;
+    }
+    void play({
+      uris: detail.songs.map(
+        (s) => s.song.uri ?? `spotify:track:${s.trackId}`
+      ),
+      offsetIndex: idx,
+      playlistId: { kind: "app", id: detail.id },
+    });
+    return true;
+  }
+
+  function handleFavoriteJump() {
+    if (!entry || !songId) return;
+    if (entry.favoriteStartMs == null) return;
+    const isThis = currentTrack?.id === songId;
+    if (!isThis && isReady) {
+      startTrackInPlaylistContext();
+      // Same trick as SongView — let the SDK load the track before we
+      // try to seek into it.
+      setTimeout(() => seek(entry.favoriteStartMs!), 250);
+    } else {
+      seek(entry.favoriteStartMs);
     }
   }
 
@@ -215,7 +369,10 @@ export function AppSongView() {
                   if (isThisTrack) {
                     togglePlayPause();
                   } else {
-                    play({ uris: [`spotify:track:${song.id}`] });
+                    // Start in the parent app-playlist's URI context so
+                    // skip / on-end-advance work without the user having
+                    // to hit Play All on the playlist page first.
+                    startTrackInPlaylistContext();
                   }
                 }}
                 className="p-3 bg-[#FF9F45] text-[#3D2817] rounded-full border-2 border-[#3D2817] shadow-[3px_3px_0px_0px_rgba(61,40,23,1)] hover:shadow-[1px_1px_0px_0px_rgba(61,40,23,1)] hover:scale-105 transition-all"
@@ -230,6 +387,107 @@ export function AppSongView() {
             )}
           </div>
         </div>
+
+        {/* ----- Favorite part (owner-set on this song-in-playlist) ----- */}
+        {/* Only rendered when we have a duration to feed the editor /
+            display (cached on the row at add time). Owners get the edit
+            affordance; everyone else gets read-only with a Jump button. */}
+        {entry.song.durationMs && entry.song.durationMs > 0 && (
+          <div className="mb-8 sm:mb-10">
+            <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2 flex-wrap">
+              <h2 className="text-xl sm:text-2xl font-bold text-[#3D2817] flex items-center gap-2">
+                <Heart className="size-5 sm:size-6 text-[#FF9F45] fill-current" />
+                Favorite part
+                {detail.ownerUsername && (
+                  <span className="ml-1 text-sm font-normal text-[#785A38]">
+                    by{" "}
+                    <Link
+                      to={`/u/${detail.ownerUsername}`}
+                      className="font-semibold text-[#3D2817] hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF9F45]"
+                    >
+                      @{detail.ownerUsername}
+                    </Link>
+                  </span>
+                )}
+              </h2>
+              {isOwner && !favoriteEditing && (
+                <Button
+                  variant="secondary"
+                  onClick={() => setFavoriteEditing(true)}
+                >
+                  <Pencil className="size-4 mr-2" />
+                  {entry.favoriteStartMs != null ? "Edit" : "Set favorite part"}
+                </Button>
+              )}
+            </div>
+
+            {favoriteEditing && isOwner ? (
+              <FavoritePartEditor
+                durationMs={entry.song.durationMs}
+                initial={
+                  entry.favoriteStartMs != null && entry.favoriteEndMs != null
+                    ? {
+                        startMs: entry.favoriteStartMs,
+                        endMs: entry.favoriteEndMs,
+                      }
+                    : null
+                }
+                currentPositionMs={
+                  currentTrack?.id === songId ? position : undefined
+                }
+                saving={favoriteSaving}
+                onSave={handleFavoriteSave}
+                onClear={
+                  entry.favoriteStartMs != null ? handleFavoriteClear : undefined
+                }
+                onCancel={() => {
+                  setFavoriteEditing(false);
+                  setFavoriteError(null);
+                }}
+              />
+            ) : entry.favoriteStartMs != null && entry.favoriteEndMs != null ? (
+              <FavoritePartDisplay
+                startMs={entry.favoriteStartMs}
+                endMs={entry.favoriteEndMs}
+                currentPositionMs={
+                  currentTrack?.id === songId ? position : undefined
+                }
+                onJump={isReady ? handleFavoriteJump : undefined}
+                editable={isOwner}
+                onEdit={() => setFavoriteEditing(true)}
+                label={
+                  isOwner
+                    ? "Your favorite part"
+                    : detail.ownerUsername
+                      ? `@${detail.ownerUsername}'s favorite part`
+                      : "Favorite part"
+                }
+              />
+            ) : (
+              <div className="border-2 border-dashed border-[#785A38] rounded-lg p-4 sm:p-5 text-[#785A38] bg-white/50">
+                {isOwner ? (
+                  <p className="text-sm">
+                    Pin a start and end timestamp so anyone playing this
+                    track can jump straight to the bit you'd want them to
+                    hear first.
+                  </p>
+                ) : (
+                  <p className="text-sm">
+                    {detail.ownerUsername
+                      ? `@${detail.ownerUsername} hasn't pinned a favorite part for this song yet.`
+                      : "No favorite part pinned for this song yet."}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {favoriteError && (
+              <p className="mt-3 text-sm text-red-700 bg-red-50 border border-red-300 rounded px-3 py-2">
+                {favoriteError}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* ----- Description (the playlist owner's annotation) ----- */}
         <div>

@@ -21,12 +21,11 @@ import type { Song } from "./types";
 // authoritative ownership check; client-side guards here are purely UX.
 // ---------------------------------------------------------------------------
 
-// Matches the vinyl-color palette we use elsewhere in the app.
-export const VINYL_COLORS = [
-  "#1a1a2e", "#16213e", "#0f3460", "#e94560",
-  "#533483", "#2b2d42", "#8d99ae", "#d90429",
-  "#006d77", "#e29578", "#264653", "#2a9d8f",
-];
+// Re-export the shared palette so callers that already pull
+// VINYL_COLORS from here (CreatePlaylistModal) don't have to change
+// their imports. Single source of truth lives in `./vinylColors`.
+export { VINYL_COLORS } from "./vinylColors";
+import { VINYL_COLORS } from "./vinylColors";
 
 export interface AppPlaylistSummary {
   id: string;
@@ -45,6 +44,11 @@ export interface AppPlaylistSong {
   trackId: string;
   annotation: string | null;
   addedAt: string;
+  // Owner-set favorite part for this song *in this playlist*. Both null
+  // when the owner hasn't set one. When set, both are non-null and
+  // start < end (DB CHECK enforces the same invariant).
+  favoriteStartMs: number | null;
+  favoriteEndMs: number | null;
   song: Song; // from cached columns on the row
 }
 
@@ -84,6 +88,10 @@ interface SongRow {
   album: string | null;
   album_art_url: string | null;
   duration_ms: number | null;
+  // Owner-set favorite part. Added by the favorite-parts migration.
+  // Either both null or both non-null with start < end (DB CHECK).
+  favorite_start_ms: number | null;
+  favorite_end_ms: number | null;
 }
 
 function rowToSummary(row: PlaylistRow, songCount: number): AppPlaylistSummary {
@@ -134,6 +142,8 @@ function rowToPlaylistSong(row: SongRow): AppPlaylistSong {
     trackId: row.spotify_track_id,
     annotation: row.annotation,
     addedAt: row.added_at,
+    favoriteStartMs: row.favorite_start_ms,
+    favoriteEndMs: row.favorite_end_ms,
     song: rowToSong(row),
   };
 }
@@ -185,7 +195,7 @@ export async function fetchPlaylist(
   const { data: songsRaw, error: sErr } = await supabase
     .from("app_playlist_songs")
     .select(
-      "playlist_id, position, spotify_track_id, annotation, added_at, title, artist, album, album_art_url, duration_ms"
+      "playlist_id, position, spotify_track_id, annotation, added_at, title, artist, album, album_art_url, duration_ms, favorite_start_ms, favorite_end_ms"
     )
     .eq("playlist_id", playlistId)
     .order("position", { ascending: true });
@@ -324,7 +334,7 @@ export async function addSong(input: {
       duration_ms: typeof song.durationMs === "number" ? song.durationMs : null,
     })
     .select(
-      "playlist_id, position, spotify_track_id, annotation, added_at, title, artist, album, album_art_url, duration_ms"
+      "playlist_id, position, spotify_track_id, annotation, added_at, title, artist, album, album_art_url, duration_ms, favorite_start_ms, favorite_end_ms"
     )
     .single();
 
@@ -381,6 +391,55 @@ export async function updateAnnotation(input: {
   const { error } = await supabase
     .from("app_playlist_songs")
     .update({ annotation: value })
+    .eq("playlist_id", input.playlistId)
+    .eq("position", input.position);
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
+// Owner-set favorite part — write to the favorite_start_ms / favorite_end_ms
+// columns on app_playlist_songs.
+// ---------------------------------------------------------------------------
+// Pass `startMs = endMs = null` to clear. Otherwise both are required and
+// must satisfy `startMs >= 0 && endMs > startMs`. RLS already restricts
+// updates to the playlist owner, so the caller doesn't need to pass an
+// auth identity — the DB rejects mismatches.
+// ---------------------------------------------------------------------------
+export async function updateAppPlaylistFavoritePart(input: {
+  playlistId: string;
+  position: number;
+  startMs: number | null;
+  endMs: number | null;
+}): Promise<void> {
+  // Either-both-null is "clear", either-both-non-null is "set". Anything
+  // else is meaningless; bounce it before round-tripping the DB.
+  if ((input.startMs === null) !== (input.endMs === null)) {
+    throw new Error(
+      "Favorite part requires both start and end (or both null to clear)."
+    );
+  }
+
+  // Round to integer ms — the DB columns are INTEGER and Postgres
+  // rejects floats with `invalid input syntax for type integer` (a
+  // pointer-driven slider in the editor was sending fractional ms).
+  // Defense-in-depth: the editor also rounds at source.
+  const startMs =
+    input.startMs === null ? null : Math.max(0, Math.round(input.startMs));
+  const endMs =
+    input.endMs === null ? null : Math.round(input.endMs);
+
+  if (startMs !== null && endMs !== null) {
+    if (endMs <= startMs) {
+      throw new Error("Favorite part end must come after start.");
+    }
+  }
+
+  const { error } = await supabase
+    .from("app_playlist_songs")
+    .update({
+      favorite_start_ms: startMs,
+      favorite_end_ms: endMs,
+    })
     .eq("playlist_id", input.playlistId)
     .eq("position", input.position);
   if (error) throw error;

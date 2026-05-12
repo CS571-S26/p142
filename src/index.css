@@ -11,3 +11,26 @@
     from, to { transform: rotate(0deg); }
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Vinyl spinner. Applied to every <VinylRecord> SVG so any vinyl on the
+ * page can spin via either:
+ *   • a hover on a `.group` ancestor (e.g. a home-page card)
+ *   • the `.spinning` class (toggled by VinylRecord's `spinning` prop —
+ *     used to mark the playlist that's currently playing)
+ *
+ * We keep the animation always-attached and toggle `animation-play-state`
+ * so the disc resumes from where it was instead of snapping back to 0°
+ * each time the user hovers in/out. The viewBox is 0..200 square, so
+ * `transform-origin: center` rotates around the spindle.
+ * -------------------------------------------------------------------------- */
+.vinyl-disc {
+  transform-origin: center;
+  animation: disc-spin 4s linear infinite;
+  animation-play-state: paused;
+}
+
+.vinyl-disc.spinning,
+.group:hover .vinyl-disc {
+  animation-play-state: running;
+}
