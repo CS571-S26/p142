@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/p142/',
+  base: '/SpinDeck/',
   plugins: [react(), tailwindcss()],
   server: {
     host: '127.0.0.1',
